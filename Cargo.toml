@@ -1,0 +1,28 @@
+[workspace]
+members = [
+    "crates/*",
+]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+description = "Executor primitives and local command runners for Rust agents"
+license = "MIT"
+authors = ["Atlas Orien <gamesworldcraft@gmail.com>"]
+repository = "https://github.com/atlas-orien/agent-executors.git"
+documentation = "https://docs.rs/agent-executors"
+homepage = "https://github.com/atlas-orien/agent-executors"
+keywords = ["agent", "command", "executor", "cli", "shell"]
+categories = ["command-line-interface", "development-tools"]
+include = [
+    "Cargo.toml",
+    "README.md",
+    "src/**",
+]
+
+[workspace.dependencies]
+agent-executor-core = { path = "crates/core" }
+agent-executor-cli = { path = "crates/cli" }
+tempfile = "3"
+thiserror = "2"
+wait-timeout = "0.2"
