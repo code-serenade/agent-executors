@@ -23,9 +23,9 @@ agent-executor-cli = "0.1.0"
 ## Run a Command
 
 ```rust
-use agent_executor_cli::{CmdRequest, CmdTool};
+use agent_executor_cli::{CliExecutionRequest, CmdRequest, CmdTool};
 
-let output = CmdTool::run(CmdRequest {
+let output = CmdTool::execute(CliExecutionRequest::Command(CmdRequest {
     program: "echo".to_string(),
     args: vec!["hello".to_string()],
     cwd: None,
@@ -34,7 +34,7 @@ let output = CmdTool::run(CmdRequest {
     fail_on_non_zero: true,
     stdin: None,
     background: false,
-})?;
+}))?;
 
 assert_eq!(output.stdout.trim(), "hello");
 assert_eq!(output.status, agent_executor_cli::CmdStatus::Success);

@@ -18,14 +18,6 @@ pub use types::{
 pub struct CmdTool;
 
 impl CmdTool {
-    pub fn run(req: CmdRequest) -> agent_executor_core::Result<CmdOutput> {
-        CmdRunner::default().run(req)
-    }
-
-    pub fn run_shell(req: ShellCmdRequest) -> agent_executor_core::Result<CmdOutput> {
-        CmdRunner::default().run_shell(req)
-    }
-
     pub fn execute(req: CliExecutionRequest) -> agent_executor_core::Result<CliExecutionResult> {
         CmdRunner::default().execute(req)
     }

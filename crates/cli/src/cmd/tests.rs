@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn command_success_returns_structured_success() {
-    let output = CmdTool::run(CmdRequest {
+    let output = CmdTool::execute(CliExecutionRequest::Command(CmdRequest {
         program: "echo".to_string(),
         args: vec!["hello".to_string()],
         cwd: None,
@@ -15,7 +15,7 @@ fn command_success_returns_structured_success() {
         fail_on_non_zero: false,
         stdin: None,
         background: false,
-    })
+    }))
     .unwrap();
 
     assert_eq!(output.exit_code, 0);
@@ -52,7 +52,7 @@ fn shell_command_supports_shell_syntax() {
         "echo 'hello pipe' | grep pipe"
     };
 
-    let output = CmdTool::run_shell(ShellCmdRequest {
+    let output = CmdTool::execute(CliExecutionRequest::Shell(ShellCmdRequest {
         command: command.to_string(),
         cwd: None,
         env: None,
@@ -60,7 +60,7 @@ fn shell_command_supports_shell_syntax() {
         fail_on_non_zero: false,
         stdin: None,
         background: false,
-    })
+    }))
     .unwrap();
 
     assert_eq!(output.status, CmdStatus::Success);
@@ -69,7 +69,7 @@ fn shell_command_supports_shell_syntax() {
 
 #[test]
 fn timeout_is_structured_output() {
-    let output = CmdTool::run(CmdRequest {
+    let output = CmdTool::execute(CliExecutionRequest::Command(CmdRequest {
         program: "sleep".to_string(),
         args: vec!["2".to_string()],
         cwd: None,
@@ -78,7 +78,7 @@ fn timeout_is_structured_output() {
         fail_on_non_zero: false,
         stdin: None,
         background: false,
-    })
+    }))
     .unwrap();
 
     assert_eq!(output.status, CmdStatus::TimedOut);
@@ -88,7 +88,7 @@ fn timeout_is_structured_output() {
 
 #[test]
 fn non_zero_exit_can_be_observed_without_error() {
-    let output = CmdTool::run_shell(ShellCmdRequest {
+    let output = CmdTool::execute(CliExecutionRequest::Shell(ShellCmdRequest {
         command: exit_command(9),
         cwd: None,
         env: None,
@@ -96,7 +96,7 @@ fn non_zero_exit_can_be_observed_without_error() {
         fail_on_non_zero: false,
         stdin: None,
         background: false,
-    })
+    }))
     .unwrap();
 
     assert_eq!(output.exit_code, 9);
@@ -105,7 +105,7 @@ fn non_zero_exit_can_be_observed_without_error() {
 
 #[test]
 fn non_zero_exit_can_fail() {
-    let result = CmdTool::run_shell(ShellCmdRequest {
+    let result = CmdTool::execute(CliExecutionRequest::Shell(ShellCmdRequest {
         command: exit_command(7),
         cwd: None,
         env: None,
@@ -113,7 +113,7 @@ fn non_zero_exit_can_fail() {
         fail_on_non_zero: true,
         stdin: None,
         background: false,
-    });
+    }));
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("exit code 7"));
@@ -121,21 +121,30 @@ fn non_zero_exit_can_fail() {
 
 #[test]
 fn stdin_text_bytes_file_and_null_are_supported() {
-    let text = CmdTool::run(cat_request(Some(CmdStdin::Text("hello text".to_string())))).unwrap();
+    let text = CmdTool::execute(CliExecutionRequest::Command(cat_request(Some(
+        CmdStdin::Text("hello text".to_string()),
+    ))))
+    .unwrap();
     assert_eq!(text.stdout, "hello text");
 
-    let bytes = CmdTool::run(cat_request(Some(CmdStdin::Bytes(b"hello bytes".to_vec())))).unwrap();
+    let bytes = CmdTool::execute(CliExecutionRequest::Command(cat_request(Some(
+        CmdStdin::Bytes(b"hello bytes".to_vec()),
+    ))))
+    .unwrap();
     assert_eq!(bytes.stdout, "hello bytes");
 
     let mut temp_file = NamedTempFile::new().unwrap();
     write!(temp_file, "hello file").unwrap();
-    let file = CmdTool::run(cat_request(Some(CmdStdin::File(
-        temp_file.path().to_path_buf(),
+    let file = CmdTool::execute(CliExecutionRequest::Command(cat_request(Some(
+        CmdStdin::File(temp_file.path().to_path_buf()),
     ))))
     .unwrap();
     assert_eq!(file.stdout, "hello file");
 
-    let null = CmdTool::run(cat_request(Some(CmdStdin::Null))).unwrap();
+    let null = CmdTool::execute(CliExecutionRequest::Command(cat_request(Some(
+        CmdStdin::Null,
+    ))))
+    .unwrap();
     assert!(null.stdout.is_empty());
 }
 
@@ -306,7 +315,7 @@ fn session_manager_captures_output_snapshot() {
 #[cfg(not(target_os = "windows"))]
 #[test]
 fn non_utf8_stdout_is_preserved_lossily() {
-    let output = CmdTool::run_shell(ShellCmdRequest {
+    let output = CmdTool::execute(CliExecutionRequest::Shell(ShellCmdRequest {
         command: "printf '\\377\\376abc'".to_string(),
         cwd: None,
         env: None,
@@ -314,7 +323,7 @@ fn non_utf8_stdout_is_preserved_lossily() {
         fail_on_non_zero: false,
         stdin: None,
         background: false,
-    })
+    }))
     .unwrap();
 
     assert!(output.stdout.contains("abc"));
