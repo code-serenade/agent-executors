@@ -6,8 +6,8 @@ use super::*;
 
 #[test]
 fn command_success_returns_structured_success() {
-    let output = CmdRunner::default()
-        .execute(CliExecutionRequest::Command(CmdRequest {
+    let output = CliExecutor::default()
+        .execute(CliExecutionRequest::Command(CommandRequest {
             program: "echo".to_string(),
             args: vec!["hello".to_string()],
             cwd: None,
@@ -20,7 +20,7 @@ fn command_success_returns_structured_success() {
         .unwrap();
 
     assert_eq!(output.exit_code, 0);
-    assert_eq!(output.status, CmdStatus::Success);
+    assert_eq!(output.status, ExecutionStatus::Success);
     assert_eq!(output.stdout.trim(), "hello");
     assert!(!output.stdout_truncated);
     assert!(!output.stderr_truncated);
@@ -29,8 +29,8 @@ fn command_success_returns_structured_success() {
 
 #[test]
 fn unified_execute_runs_command_requests() {
-    let output = CmdRunner::default()
-        .execute(CliExecutionRequest::Command(CmdRequest {
+    let output = CliExecutor::default()
+        .execute(CliExecutionRequest::Command(CommandRequest {
             program: "echo".to_string(),
             args: vec!["hello".to_string()],
             cwd: None,
@@ -42,7 +42,7 @@ fn unified_execute_runs_command_requests() {
         }))
         .unwrap();
 
-    assert_eq!(output.status, CmdStatus::Success);
+    assert_eq!(output.status, ExecutionStatus::Success);
     assert_eq!(output.stdout.trim(), "hello");
 }
 
@@ -54,9 +54,10 @@ fn shell_command_supports_shell_syntax() {
         "echo 'hello pipe' | grep pipe"
     };
 
-    let output = CmdRunner::default()
-        .execute(CliExecutionRequest::Shell(ShellCmdRequest {
+    let output = CliExecutor::default()
+        .execute(CliExecutionRequest::Shell(ShellRequest {
             command: command.to_string(),
+            shell: ShellKind::default(),
             cwd: None,
             env: None,
             timeout_ms: None,
@@ -66,14 +67,14 @@ fn shell_command_supports_shell_syntax() {
         }))
         .unwrap();
 
-    assert_eq!(output.status, CmdStatus::Success);
+    assert_eq!(output.status, ExecutionStatus::Success);
     assert!(output.stdout.contains("hello pipe"));
 }
 
 #[test]
 fn timeout_is_structured_output() {
-    let output = CmdRunner::default()
-        .execute(CliExecutionRequest::Command(CmdRequest {
+    let output = CliExecutor::default()
+        .execute(CliExecutionRequest::Command(CommandRequest {
             program: "sleep".to_string(),
             args: vec!["2".to_string()],
             cwd: None,
@@ -85,16 +86,17 @@ fn timeout_is_structured_output() {
         }))
         .unwrap();
 
-    assert_eq!(output.status, CmdStatus::TimedOut);
+    assert_eq!(output.status, ExecutionStatus::TimedOut);
     assert_eq!(output.exit_code, -1);
     assert!(output.duration_ms >= 50);
 }
 
 #[test]
 fn non_zero_exit_can_be_observed_without_error() {
-    let output = CmdRunner::default()
-        .execute(CliExecutionRequest::Shell(ShellCmdRequest {
+    let output = CliExecutor::default()
+        .execute(CliExecutionRequest::Shell(ShellRequest {
             command: exit_command(9),
+            shell: ShellKind::default(),
             cwd: None,
             env: None,
             timeout_ms: None,
@@ -105,13 +107,14 @@ fn non_zero_exit_can_be_observed_without_error() {
         .unwrap();
 
     assert_eq!(output.exit_code, 9);
-    assert_eq!(output.status, CmdStatus::Failed(9));
+    assert_eq!(output.status, ExecutionStatus::Failed(9));
 }
 
 #[test]
 fn non_zero_exit_can_fail() {
-    let result = CmdRunner::default().execute(CliExecutionRequest::Shell(ShellCmdRequest {
+    let result = CliExecutor::default().execute(CliExecutionRequest::Shell(ShellRequest {
         command: exit_command(7),
+        shell: ShellKind::default(),
         cwd: None,
         env: None,
         timeout_ms: None,
@@ -126,32 +129,32 @@ fn non_zero_exit_can_fail() {
 
 #[test]
 fn stdin_text_bytes_file_and_null_are_supported() {
-    let text = CmdRunner::default()
+    let text = CliExecutor::default()
         .execute(CliExecutionRequest::Command(cat_request(Some(
-            CmdStdin::Text("hello text".to_string()),
+            ExecutionStdin::Text("hello text".to_string()),
         ))))
         .unwrap();
     assert_eq!(text.stdout, "hello text");
 
-    let bytes = CmdRunner::default()
+    let bytes = CliExecutor::default()
         .execute(CliExecutionRequest::Command(cat_request(Some(
-            CmdStdin::Bytes(b"hello bytes".to_vec()),
+            ExecutionStdin::Bytes(b"hello bytes".to_vec()),
         ))))
         .unwrap();
     assert_eq!(bytes.stdout, "hello bytes");
 
     let mut temp_file = NamedTempFile::new().unwrap();
     write!(temp_file, "hello file").unwrap();
-    let file = CmdRunner::default()
+    let file = CliExecutor::default()
         .execute(CliExecutionRequest::Command(cat_request(Some(
-            CmdStdin::File(temp_file.path().to_path_buf()),
+            ExecutionStdin::File(temp_file.path().to_path_buf()),
         ))))
         .unwrap();
     assert_eq!(file.stdout, "hello file");
 
-    let null = CmdRunner::default()
+    let null = CliExecutor::default()
         .execute(CliExecutionRequest::Command(cat_request(Some(
-            CmdStdin::Null,
+            ExecutionStdin::Null,
         ))))
         .unwrap();
     assert!(null.stdout.is_empty());
@@ -159,12 +162,13 @@ fn stdin_text_bytes_file_and_null_are_supported() {
 
 #[test]
 fn policy_can_reject_shell_and_large_timeout() {
-    let no_shell = CmdRunner::new(CommandPolicy {
+    let no_shell = CliExecutor::new(CommandPolicy {
         allow_shell: false,
         ..CommandPolicy::default()
     });
-    let shell_result = no_shell.execute(CliExecutionRequest::Shell(ShellCmdRequest {
+    let shell_result = no_shell.execute(CliExecutionRequest::Shell(ShellRequest {
         command: "echo nope".to_string(),
+        shell: ShellKind::default(),
         cwd: None,
         env: None,
         timeout_ms: None,
@@ -174,11 +178,11 @@ fn policy_can_reject_shell_and_large_timeout() {
     }));
     assert!(shell_result.is_err());
 
-    let bounded = CmdRunner::new(CommandPolicy {
+    let bounded = CliExecutor::new(CommandPolicy {
         max_timeout_ms: Some(10),
         ..CommandPolicy::default()
     });
-    let timeout_result = bounded.execute(CliExecutionRequest::Command(CmdRequest {
+    let timeout_result = bounded.execute(CliExecutionRequest::Command(CommandRequest {
         program: "echo".to_string(),
         args: vec!["hello".to_string()],
         cwd: None,
@@ -194,14 +198,14 @@ fn policy_can_reject_shell_and_large_timeout() {
 #[test]
 fn policy_can_restrict_program_cwd_and_env() {
     let temp_dir = tempfile::tempdir().unwrap();
-    let runner = CmdRunner::new(CommandPolicy {
+    let runner = CliExecutor::new(CommandPolicy {
         allowed_programs: Some(HashSet::from(["echo".to_string()])),
         allowed_cwd_roots: vec![temp_dir.path().to_path_buf()],
         allowed_env_vars: Some(HashSet::from(["SAFE_ENV".to_string()])),
         ..CommandPolicy::default()
     });
 
-    let allowed = runner.execute(CliExecutionRequest::Command(CmdRequest {
+    let allowed = runner.execute(CliExecutionRequest::Command(CommandRequest {
         program: "echo".to_string(),
         args: vec!["hello".to_string()],
         cwd: Some(temp_dir.path().display().to_string()),
@@ -216,19 +220,19 @@ fn policy_can_restrict_program_cwd_and_env() {
     }));
     assert!(allowed.is_ok());
 
-    let blocked_program = runner.execute(CliExecutionRequest::Command(CmdRequest {
+    let blocked_program = runner.execute(CliExecutionRequest::Command(CommandRequest {
         program: "cat".to_string(),
         args: vec![],
         cwd: Some(temp_dir.path().display().to_string()),
         env: None,
         timeout_ms: None,
         fail_on_non_zero: false,
-        stdin: Some(CmdStdin::Null),
+        stdin: Some(ExecutionStdin::Null),
         background: false,
     }));
     assert!(blocked_program.is_err());
 
-    let blocked_env = runner.execute(CliExecutionRequest::Command(CmdRequest {
+    let blocked_env = runner.execute(CliExecutionRequest::Command(CommandRequest {
         program: "echo".to_string(),
         args: vec!["hello".to_string()],
         cwd: Some(temp_dir.path().display().to_string()),
@@ -246,14 +250,15 @@ fn policy_can_restrict_program_cwd_and_env() {
 
 #[test]
 fn policy_can_limit_captured_output_size() {
-    let runner = CmdRunner::new(CommandPolicy {
+    let runner = CliExecutor::new(CommandPolicy {
         max_output_bytes: Some(5),
         ..CommandPolicy::default()
     });
 
     let output = runner
-        .execute(CliExecutionRequest::Shell(ShellCmdRequest {
+        .execute(CliExecutionRequest::Shell(ShellRequest {
             command: output_limit_command(),
+            shell: ShellKind::default(),
             cwd: None,
             env: None,
             timeout_ms: None,
@@ -268,65 +273,35 @@ fn policy_can_limit_captured_output_size() {
     assert!(!output.stderr_truncated);
 }
 
+#[cfg(not(target_os = "windows"))]
 #[test]
-fn session_manager_can_start_query_and_stop() {
-    let manager = CmdSessionManager::default();
-    let session = manager
-        .start(CmdRequest {
-            program: "sleep".to_string(),
-            args: vec!["5".to_string()],
-            cwd: None,
-            env: None,
-            timeout_ms: None,
-            fail_on_non_zero: false,
-            stdin: None,
-            background: true,
-        })
+fn shell_request_can_choose_zsh() {
+    if std::process::Command::new("zsh")
+        .arg("-c")
+        .arg("true")
+        .status()
+        .is_err()
+    {
+        return;
+    }
+
+    let output = CliExecutor::default()
+        .execute(CliExecutionRequest::Shell(
+            ShellRequest::new("echo $ZSH_VERSION").with_shell(ShellKind::Zsh),
+        ))
         .unwrap();
 
-    assert!(session.pid > 0);
-    assert_eq!(
-        manager.status(session).unwrap(),
-        CmdSessionStatus::Running { pid: session.pid }
-    );
-    assert!(matches!(
-        manager.stop(session).unwrap(),
-        CmdSessionStatus::Exited(_)
-    ));
-    assert!(matches!(
-        manager.status(session).unwrap(),
-        CmdSessionStatus::Exited(_)
-    ));
-}
-
-#[test]
-fn session_manager_captures_output_snapshot() {
-    let manager = CmdSessionManager::default();
-    let session = manager
-        .start_shell(ShellCmdRequest {
-            command: session_output_command(),
-            cwd: None,
-            env: None,
-            timeout_ms: None,
-            fail_on_non_zero: false,
-            stdin: None,
-            background: true,
-        })
-        .unwrap();
-
-    std::thread::sleep(std::time::Duration::from_millis(100));
-    let output = manager.output(session).unwrap();
-    assert_eq!(output.stdout, "hello");
-    assert!(output.stderr.is_empty());
-    let _ = manager.stop(session).unwrap();
+    assert_eq!(output.status, ExecutionStatus::Success);
+    assert!(!output.stdout.trim().is_empty());
 }
 
 #[cfg(not(target_os = "windows"))]
 #[test]
 fn non_utf8_stdout_is_preserved_lossily() {
-    let output = CmdRunner::default()
-        .execute(CliExecutionRequest::Shell(ShellCmdRequest {
+    let output = CliExecutor::default()
+        .execute(CliExecutionRequest::Shell(ShellRequest {
             command: "printf '\\377\\376abc'".to_string(),
+            shell: ShellKind::default(),
             cwd: None,
             env: None,
             timeout_ms: None,
@@ -340,8 +315,8 @@ fn non_utf8_stdout_is_preserved_lossily() {
     assert!(!output.stdout.is_empty());
 }
 
-fn cat_request(stdin: Option<CmdStdin>) -> CmdRequest {
-    CmdRequest {
+fn cat_request(stdin: Option<ExecutionStdin>) -> CommandRequest {
+    CommandRequest {
         program: "cat".to_string(),
         args: vec![],
         cwd: None,
@@ -354,19 +329,7 @@ fn cat_request(stdin: Option<CmdStdin>) -> CmdRequest {
 }
 
 fn exit_command(code: i32) -> String {
-    if cfg!(target_os = "windows") {
-        format!("cmd /c exit {code}")
-    } else {
-        format!("sh -c 'exit {code}'")
-    }
-}
-
-fn session_output_command() -> String {
-    if cfg!(target_os = "windows") {
-        "echo hello & timeout /t 1 > nul".to_string()
-    } else {
-        "printf hello; sleep 1".to_string()
-    }
+    format!("exit {code}")
 }
 
 fn output_limit_command() -> String {

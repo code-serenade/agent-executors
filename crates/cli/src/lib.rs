@@ -1,7 +1,6 @@
-pub mod cmd;
+mod executor;
 
-pub use cmd::{
-    CliExecutionRequest, CliExecutionResult, CmdOutput, CmdRequest, CmdRunner, CmdSession,
-    CmdSessionManager, CmdSessionOutput, CmdSessionStatus, CmdStatus, CmdStdin, CommandPolicy,
-    ShellCmdRequest,
+pub use executor::{
+    CliExecutionRequest, CliExecutionResult, CliExecutor, CommandPolicy, CommandRequest,
+    ExecutionOutput, ExecutionStatus, ExecutionStdin, ShellKind, ShellRequest,
 };

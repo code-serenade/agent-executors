@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CmdStdin {
+pub enum ExecutionStdin {
     Text(String),
     Bytes(Vec<u8>),
     File(PathBuf),
@@ -9,38 +9,78 @@ pub enum CmdStdin {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CmdRequest {
+pub struct CommandRequest {
     pub program: String,
     pub args: Vec<String>,
     pub cwd: Option<String>,
     pub env: Option<HashMap<String, String>>,
     pub timeout_ms: Option<u64>,
     pub fail_on_non_zero: bool,
-    pub stdin: Option<CmdStdin>,
+    pub stdin: Option<ExecutionStdin>,
     pub background: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ShellCmdRequest {
+pub struct ShellRequest {
     pub command: String,
+    pub shell: ShellKind,
     pub cwd: Option<String>,
     pub env: Option<HashMap<String, String>>,
     pub timeout_ms: Option<u64>,
     pub fail_on_non_zero: bool,
-    pub stdin: Option<CmdStdin>,
+    pub stdin: Option<ExecutionStdin>,
     pub background: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CliExecutionRequest {
-    Command(CmdRequest),
-    Shell(ShellCmdRequest),
+pub enum ShellKind {
+    Sh,
+    Zsh,
+    Bash,
+    Cmd,
+    Custom(PathBuf),
 }
 
-pub type CliExecutionResult = CmdOutput;
+impl ShellRequest {
+    pub fn new(command: impl Into<String>) -> Self {
+        Self {
+            command: command.into(),
+            shell: ShellKind::default(),
+            cwd: None,
+            env: None,
+            timeout_ms: None,
+            fail_on_non_zero: false,
+            stdin: None,
+            background: false,
+        }
+    }
+
+    pub fn with_shell(mut self, shell: ShellKind) -> Self {
+        self.shell = shell;
+        self
+    }
+}
+
+impl Default for ShellKind {
+    fn default() -> Self {
+        if cfg!(target_os = "windows") {
+            Self::Cmd
+        } else {
+            Self::Sh
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CmdStatus {
+pub enum CliExecutionRequest {
+    Command(CommandRequest),
+    Shell(ShellRequest),
+}
+
+pub type CliExecutionResult = ExecutionOutput;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExecutionStatus {
     Success,
     Failed(i32),
     TimedOut,
@@ -49,37 +89,25 @@ pub enum CmdStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CmdOutput {
+pub struct ExecutionOutput {
     pub stdout: String,
     pub stderr: String,
     pub exit_code: i32,
     pub pid: Option<u32>,
-    pub status: CmdStatus,
+    pub status: ExecutionStatus,
     pub duration_ms: u128,
     pub stdout_truncated: bool,
     pub stderr_truncated: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CmdSessionOutput {
-    pub stdout: String,
-    pub stderr: String,
-}
-
-impl CmdSessionOutput {
-    pub(super) fn new(stdout: String, stderr: String) -> Self {
-        Self { stdout, stderr }
-    }
-}
-
-impl CmdOutput {
+impl ExecutionOutput {
     pub(super) fn background(pid: u32) -> Self {
         Self {
             stdout: String::new(),
             stderr: String::new(),
             exit_code: 0,
             pid: Some(pid),
-            status: CmdStatus::Started,
+            status: ExecutionStatus::Started,
             duration_ms: 0,
             stdout_truncated: false,
             stderr_truncated: false,
@@ -95,9 +123,9 @@ impl CmdOutput {
         stderr_truncated: bool,
     ) -> Self {
         let status = match exit_code {
-            0 => CmdStatus::Success,
-            -1 => CmdStatus::Unknown,
-            code => CmdStatus::Failed(code),
+            0 => ExecutionStatus::Success,
+            -1 => ExecutionStatus::Unknown,
+            code => ExecutionStatus::Failed(code),
         };
 
         Self {
@@ -124,7 +152,7 @@ impl CmdOutput {
             stderr,
             exit_code: -1,
             pid: None,
-            status: CmdStatus::TimedOut,
+            status: ExecutionStatus::TimedOut,
             duration_ms,
             stdout_truncated,
             stderr_truncated,

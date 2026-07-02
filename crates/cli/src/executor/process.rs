@@ -5,7 +5,6 @@ use std::{
     fs::File,
     io::{self, Read, Write},
     process::{Child, Command, ExitStatus, Stdio},
-    sync::{Arc, Mutex},
     thread,
     time::Duration,
 };
@@ -13,7 +12,7 @@ use std::{
 use agent_executor_core::{Error, Result};
 use wait_timeout::ChildExt;
 
-use super::types::{CmdOutput, CmdStatus, CmdStdin};
+use super::types::{ExecutionOutput, ExecutionStatus, ExecutionStdin};
 
 pub(super) enum WaitOutcome {
     Exited(ExitStatus),
@@ -24,7 +23,7 @@ pub(super) fn configure_command(
     cmd: &mut Command,
     cwd: Option<String>,
     env: Option<HashMap<String, String>>,
-    stdin: Option<&CmdStdin>,
+    stdin: Option<&ExecutionStdin>,
     background: bool,
 ) -> Result<()> {
     configure_process_group(cmd);
@@ -42,28 +41,6 @@ pub(super) fn configure_command(
     Ok(())
 }
 
-pub(super) fn configure_session_command(
-    cmd: &mut Command,
-    cwd: Option<String>,
-    env: Option<HashMap<String, String>>,
-    stdin: Option<&CmdStdin>,
-) -> Result<()> {
-    configure_process_group(cmd);
-
-    if let Some(cwd) = cwd {
-        cmd.current_dir(cwd);
-    }
-
-    if let Some(env) = env {
-        cmd.envs(env);
-    }
-
-    configure_stdin(cmd, stdin, true)?;
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
-    Ok(())
-}
-
 pub(super) fn spawn_child(cmd: &mut Command) -> Result<Child> {
     cmd.spawn().map_err(Error::tool_io)
 }
@@ -78,13 +55,16 @@ where
     pipe.take().map(|reader| spawn_reader(reader, max_bytes))
 }
 
-pub(super) fn write_stdin(child: &mut Child, stdin_content: Option<&CmdStdin>) -> Result<()> {
+pub(super) fn write_stdin(child: &mut Child, stdin_content: Option<&ExecutionStdin>) -> Result<()> {
     let Some(stdin_content) = stdin_content else {
         return Ok(());
     };
 
     let Some(mut stdin) = child.stdin.take() else {
-        if matches!(stdin_content, CmdStdin::Text(_) | CmdStdin::Bytes(_)) {
+        if matches!(
+            stdin_content,
+            ExecutionStdin::Text(_) | ExecutionStdin::Bytes(_)
+        ) {
             return Err(Error::tool_io(io::Error::new(
                 io::ErrorKind::BrokenPipe,
                 "stdin pipe not available",
@@ -94,9 +74,9 @@ pub(super) fn write_stdin(child: &mut Child, stdin_content: Option<&CmdStdin>) -
     };
 
     match stdin_content {
-        CmdStdin::Text(text) => stdin.write_all(text.as_bytes()).map_err(Error::tool_io)?,
-        CmdStdin::Bytes(bytes) => stdin.write_all(bytes).map_err(Error::tool_io)?,
-        CmdStdin::File(_) | CmdStdin::Null => {}
+        ExecutionStdin::Text(text) => stdin.write_all(text.as_bytes()).map_err(Error::tool_io)?,
+        ExecutionStdin::Bytes(bytes) => stdin.write_all(bytes).map_err(Error::tool_io)?,
+        ExecutionStdin::File(_) | ExecutionStdin::Null => {}
     }
 
     stdin.flush().map_err(Error::tool_io)?;
@@ -132,40 +112,18 @@ pub(super) fn collect_output(
     })
 }
 
-#[derive(Debug)]
-pub(super) struct SessionOutputCapture {
-    stdout: Arc<Mutex<Vec<u8>>>,
-    stderr: Arc<Mutex<Vec<u8>>>,
-}
-
-impl SessionOutputCapture {
-    pub(super) fn snapshot(&self) -> Result<(String, String)> {
-        Ok((
-            snapshot_buffer(&self.stdout)?,
-            snapshot_buffer(&self.stderr)?,
-        ))
-    }
-}
-
-pub(super) fn capture_session_output(child: &mut Child) -> SessionOutputCapture {
-    SessionOutputCapture {
-        stdout: capture_pipe(&mut child.stdout),
-        stderr: capture_pipe(&mut child.stderr),
-    }
-}
-
 pub(super) fn build_output(
     outcome: WaitOutcome,
     stdout_handle: Option<thread::JoinHandle<io::Result<CapturedBytes>>>,
     stderr_handle: Option<thread::JoinHandle<io::Result<CapturedBytes>>>,
     fail_on_non_zero: bool,
     duration_ms: u128,
-) -> Result<CmdOutput> {
+) -> Result<ExecutionOutput> {
     let stdout = collect_output(stdout_handle)?;
     let stderr = collect_output(stderr_handle)?;
 
     match outcome {
-        WaitOutcome::TimedOut => Ok(CmdOutput::timed_out(
+        WaitOutcome::TimedOut => Ok(ExecutionOutput::timed_out(
             stdout.text,
             stderr.text,
             duration_ms,
@@ -174,7 +132,7 @@ pub(super) fn build_output(
         )),
         WaitOutcome::Exited(status) => {
             let exit_code = status.code().unwrap_or(-1);
-            let output = CmdOutput::foreground(
+            let output = ExecutionOutput::foreground(
                 stdout.text,
                 stderr.text,
                 exit_code,
@@ -183,7 +141,7 @@ pub(super) fn build_output(
                 stderr.truncated,
             );
 
-            if fail_on_non_zero && matches!(output.status, CmdStatus::Failed(_)) {
+            if fail_on_non_zero && matches!(output.status, ExecutionStatus::Failed(_)) {
                 return Err(Error::tool_cmd_failed(exit_code));
             }
 
@@ -192,13 +150,17 @@ pub(super) fn build_output(
     }
 }
 
-fn configure_stdin(cmd: &mut Command, stdin: Option<&CmdStdin>, background: bool) -> Result<()> {
+fn configure_stdin(
+    cmd: &mut Command,
+    stdin: Option<&ExecutionStdin>,
+    background: bool,
+) -> Result<()> {
     match stdin {
-        Some(CmdStdin::File(path)) => {
+        Some(ExecutionStdin::File(path)) => {
             let file = File::open(path).map_err(Error::tool_io)?;
             cmd.stdin(file);
         }
-        Some(CmdStdin::Null) => {
+        Some(ExecutionStdin::Null) => {
             cmd.stdin(Stdio::null());
         }
         Some(_) => {
@@ -240,12 +202,6 @@ fn kill_timed_out_child(child: &mut Child) -> Result<()> {
     child.kill().map_err(Error::tool_io)?;
     child.wait().map_err(Error::tool_io)?;
     Ok(())
-}
-
-pub(super) fn stop_child(child: &mut Child) -> Result<ExitStatus> {
-    kill_child_process_group(child);
-    child.kill().map_err(Error::tool_io)?;
-    child.wait().map_err(Error::tool_io)
 }
 
 #[derive(Debug)]
@@ -303,44 +259,6 @@ where
 
         Ok(CapturedBytes { bytes, truncated })
     })
-}
-
-fn capture_pipe<R>(pipe: &mut Option<R>) -> Arc<Mutex<Vec<u8>>>
-where
-    R: Read + Send + 'static,
-{
-    let buffer = Arc::new(Mutex::new(Vec::new()));
-    let Some(mut reader) = pipe.take() else {
-        return buffer;
-    };
-
-    let thread_buffer = Arc::clone(&buffer);
-    thread::spawn(move || {
-        let mut chunk = [0; 8192];
-        loop {
-            match reader.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(count) => {
-                    let Ok(mut buffer) = thread_buffer.lock() else {
-                        break;
-                    };
-                    buffer.extend_from_slice(&chunk[.. count]);
-                }
-                Err(_) => break,
-            }
-        }
-    });
-
-    buffer
-}
-
-fn snapshot_buffer(buffer: &Arc<Mutex<Vec<u8>>>) -> Result<String> {
-    let bytes = buffer
-        .lock()
-        .map_err(|_| Error::tool_io(io::Error::other("session output lock poisoned")))?
-        .clone();
-
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 #[cfg(unix)]

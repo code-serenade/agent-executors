@@ -6,8 +6,8 @@ Small Rust executor primitives for running local commands and shell scripts.
 
 - Run commands with args, cwd, env, stdin, timeout, and output capture.
 - Run shell commands when shell syntax is needed.
+- Choose the shell for shell commands (`sh`, `zsh`, `bash`, `cmd.exe`, or a custom path).
 - Return structured command status for success, non-zero exits, timeout, and background start.
-- Manage long-running command sessions with start, status, output snapshot, and stop operations.
 - Apply command policy checks before execution.
 - Limit captured output and mark truncated stdout/stderr.
 - Measure command duration.
@@ -23,9 +23,9 @@ agent-executor-cli = "0.1.0"
 ## Run a Command
 
 ```rust
-use agent_executor_cli::{CliExecutionRequest, CmdRequest, CmdRunner};
+use agent_executor_cli::{CliExecutionRequest, CommandRequest, CliExecutor};
 
-let output = CmdRunner::default().execute(CliExecutionRequest::Command(CmdRequest {
+let output = CliExecutor::default().execute(CliExecutionRequest::Command(CommandRequest {
     program: "echo".to_string(),
     args: vec!["hello".to_string()],
     cwd: None,
@@ -37,15 +37,15 @@ let output = CmdRunner::default().execute(CliExecutionRequest::Command(CmdReques
 }))?;
 
 assert_eq!(output.stdout.trim(), "hello");
-assert_eq!(output.status, agent_executor_cli::CmdStatus::Success);
+assert_eq!(output.status, agent_executor_cli::ExecutionStatus::Success);
 assert!(!output.stdout_truncated);
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 ## Notes
 
-- `run_shell` passes the command string to the system shell. Do not use it with untrusted input.
+- `ShellRequest` passes the command string to the selected shell. Do not use it with untrusted input.
 - Command output is collected into memory.
-- Timeout returns `CmdStatus::TimedOut` after killing the direct child process.
-- On Unix, timeout and session stop try to kill the process group before killing the direct child.
+- Timeout returns `ExecutionStatus::TimedOut` after killing the direct child process.
+- On Unix, timeout tries to kill the process group before killing the direct child.
 - On Windows, process cleanup currently targets the direct child.

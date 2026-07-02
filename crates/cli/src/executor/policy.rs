@@ -6,7 +6,7 @@ use std::{
 
 use agent_executor_core::{Error, Result};
 
-use super::types::{CmdRequest, ShellCmdRequest};
+use super::types::{CommandRequest, ShellRequest};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandPolicy {
@@ -35,7 +35,7 @@ impl Default for CommandPolicy {
 
 impl CommandPolicy {
     // Internal validation API
-    pub(super) fn validate_command(&self, req: &CmdRequest) -> Result<()> {
+    pub(super) fn validate_command(&self, req: &CommandRequest) -> Result<()> {
         self.validate_program(&req.program)?;
         self.validate_cwd(req.cwd.as_deref())?;
         self.validate_env(req.env.as_ref())?;
@@ -43,15 +43,7 @@ impl CommandPolicy {
         self.validate_timeout(req.timeout_ms)
     }
 
-    pub(super) fn validate_command_session(&self, req: &CmdRequest) -> Result<()> {
-        self.validate_program(&req.program)?;
-        self.validate_cwd(req.cwd.as_deref())?;
-        self.validate_env(req.env.as_ref())?;
-        self.validate_background(true)?;
-        self.validate_timeout(req.timeout_ms)
-    }
-
-    pub(super) fn validate_shell(&self, req: &ShellCmdRequest) -> Result<()> {
+    pub(super) fn validate_shell(&self, req: &ShellRequest) -> Result<()> {
         if !self.allow_shell {
             return Err(policy_error("shell commands are not allowed by policy"));
         }
@@ -59,17 +51,6 @@ impl CommandPolicy {
         self.validate_cwd(req.cwd.as_deref())?;
         self.validate_env(req.env.as_ref())?;
         self.validate_background(req.background)?;
-        self.validate_timeout(req.timeout_ms)
-    }
-
-    pub(super) fn validate_shell_session(&self, req: &ShellCmdRequest) -> Result<()> {
-        if !self.allow_shell {
-            return Err(policy_error("shell commands are not allowed by policy"));
-        }
-
-        self.validate_cwd(req.cwd.as_deref())?;
-        self.validate_env(req.env.as_ref())?;
-        self.validate_background(true)?;
         self.validate_timeout(req.timeout_ms)
     }
 }

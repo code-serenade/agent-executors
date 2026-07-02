@@ -4,19 +4,20 @@ use agent_executor_core::Result;
 
 use super::{
     policy::CommandPolicy,
-    process::{self, WaitOutcome},
+    process,
     shell::build_shell_command,
     types::{
-        CliExecutionRequest, CliExecutionResult, CmdOutput, CmdRequest, CmdStdin, ShellCmdRequest,
+        CliExecutionRequest, CliExecutionResult, CommandRequest, ExecutionOutput, ExecutionStdin,
+        ShellRequest,
     },
 };
 
 #[derive(Debug, Clone, Default)]
-pub struct CmdRunner {
+pub struct CliExecutor {
     pub(super) policy: CommandPolicy,
 }
 
-impl CmdRunner {
+impl CliExecutor {
     // Public API
     pub fn new(policy: CommandPolicy) -> Self {
         Self { policy }
@@ -30,9 +31,9 @@ impl CmdRunner {
     }
 }
 
-impl CmdRunner {
+impl CliExecutor {
     // Internal execution paths
-    pub(super) fn run(&self, req: CmdRequest) -> Result<CmdOutput> {
+    pub(super) fn run(&self, req: CommandRequest) -> Result<ExecutionOutput> {
         self.policy.validate_command(&req)?;
         let mut cmd = Command::new(&req.program);
         cmd.args(&req.args);
@@ -40,14 +41,14 @@ impl CmdRunner {
         self.run_inner(&mut cmd, RunParts::from(req))
     }
 
-    pub(super) fn run_shell(&self, req: ShellCmdRequest) -> Result<CmdOutput> {
+    pub(super) fn run_shell(&self, req: ShellRequest) -> Result<ExecutionOutput> {
         self.policy.validate_shell(&req)?;
-        let mut cmd = build_shell_command(&req.command);
+        let mut cmd = build_shell_command(&req.shell, &req.command);
 
         self.run_inner(&mut cmd, RunParts::from(req))
     }
 
-    pub(super) fn run_inner(&self, cmd: &mut Command, parts: RunParts) -> Result<CmdOutput> {
+    pub(super) fn run_inner(&self, cmd: &mut Command, parts: RunParts) -> Result<ExecutionOutput> {
         let started_at = Instant::now();
         process::configure_command(
             cmd,
@@ -65,7 +66,7 @@ impl CmdRunner {
         process::write_stdin(&mut child, parts.stdin.as_ref())?;
 
         if parts.background {
-            return Ok(CmdOutput::background(child.id()));
+            return Ok(ExecutionOutput::background(child.id()));
         }
 
         let outcome = match process::wait_for_child(&mut child, parts.timeout_ms) {
@@ -85,17 +86,6 @@ impl CmdRunner {
             started_at.elapsed().as_millis(),
         )
     }
-
-    pub(super) fn spawn_session_command(
-        &self,
-        mut cmd: Command,
-        req: SessionStartParts,
-    ) -> Result<std::process::Child> {
-        process::configure_session_command(&mut cmd, req.cwd, req.env, req.stdin.as_ref())?;
-        let mut child = process::spawn_child(&mut cmd)?;
-        process::write_stdin(&mut child, req.stdin.as_ref())?;
-        Ok(child)
-    }
 }
 
 pub(super) struct RunParts {
@@ -103,12 +93,12 @@ pub(super) struct RunParts {
     env: Option<std::collections::HashMap<String, String>>,
     timeout_ms: Option<u64>,
     fail_on_non_zero: bool,
-    stdin: Option<CmdStdin>,
+    stdin: Option<ExecutionStdin>,
     background: bool,
 }
 
-impl From<CmdRequest> for RunParts {
-    fn from(req: CmdRequest) -> Self {
+impl From<CommandRequest> for RunParts {
+    fn from(req: CommandRequest) -> Self {
         Self {
             cwd: req.cwd,
             env: req.env,
@@ -120,8 +110,8 @@ impl From<CmdRequest> for RunParts {
     }
 }
 
-impl From<ShellCmdRequest> for RunParts {
-    fn from(req: ShellCmdRequest) -> Self {
+impl From<ShellRequest> for RunParts {
+    fn from(req: ShellRequest) -> Self {
         Self {
             cwd: req.cwd,
             env: req.env,
@@ -129,23 +119,6 @@ impl From<ShellCmdRequest> for RunParts {
             fail_on_non_zero: req.fail_on_non_zero,
             stdin: req.stdin,
             background: req.background,
-        }
-    }
-}
-
-pub(super) struct SessionStartParts {
-    pub(super) cwd: Option<String>,
-    pub(super) env: Option<std::collections::HashMap<String, String>>,
-    pub(super) stdin: Option<super::types::CmdStdin>,
-}
-
-impl From<WaitOutcome> for super::session::CmdSessionStatus {
-    fn from(outcome: WaitOutcome) -> Self {
-        match outcome {
-            WaitOutcome::Exited(status) => {
-                super::session::CmdSessionStatus::Exited(status.code().unwrap_or(-1))
-            }
-            WaitOutcome::TimedOut => super::session::CmdSessionStatus::TimedOut,
         }
     }
 }

@@ -111,7 +111,6 @@ CLI crate 内部按层组织：
 - `runner`：同步命令执行入口
 - `process`：底层进程配置、stdin/stdout/stderr、wait/timeout 处理
 - `shell`：平台相关 shell 命令构造
-- `session`：长任务 session 的启动、查询和停止
 - `policy`：低层执行安全策略入口
 
 同步执行结果使用结构化状态表达：
@@ -119,15 +118,15 @@ CLI crate 内部按层组织：
 - `Success`：命令退出码为 0
 - `Failed(code)`：命令已经结束，但退出码非 0
 - `TimedOut`：命令超过 timeout 后被终止
-- `Started`：后台命令或 session 已启动
+- `Started`：后台命令已启动
 
-`fail_on_non_zero` 只决定非 0 退出码是否升级成 `Error`；即使不升级，调用方仍然可以从 `CmdOutput.status` 读到 `Failed(code)`。timeout 不再作为普通执行失败抛出，而是返回 `TimedOut` 状态，真正的 `Error` 留给 spawn/io/policy 这类执行器自身失败。
+`fail_on_non_zero` 只决定非 0 退出码是否升级成 `Error`；即使不升级，调用方仍然可以从 `ExecutionOutput.status` 读到 `Failed(code)`。timeout 不再作为普通执行失败抛出，而是返回 `TimedOut` 状态，真正的 `Error` 留给 spawn/io/policy 这类执行器自身失败。
 
-长任务使用 `CmdSessionManager` 管理。它负责启动命令、返回 session id/pid、查询是否仍在运行、停止进程、以及读取当前 stdout/stderr 快照。session 是 executor 内部运行态，不承担 agent capsule 写入；agent 项目可以把 `CmdOutput`、`CmdSessionStatus` 或 `CmdSessionOutput` 映射成自己的 capsule 数据。
+当前 public API 只保留一个执行入口：`CliExecutor::execute`。长任务 session 暂时不进入 public API；如果后续要支持可观察长任务，应该先设计统一的 session request/result，再决定是否增加第二条清晰边界，而不是把多个零散方法直接暴露出去。
 
 安全策略在 `CommandPolicy` 里提供统一入口，包括是否允许 shell、是否允许后台任务、最大 timeout、可执行程序 allowlist、cwd root allowlist、以及请求级 env var allowlist。以后继续扩展更细粒度限制时，应该放在 policy 层，而不是混进 process runner。
 
-在 Unix 平台上，执行器会尽量把启动的进程放进独立进程组；timeout 和 session stop 会先尝试杀掉整个进程组，再杀直接 child。这能覆盖常见 shell 子进程清理场景。Windows 目前仍只处理直接 child。
+在 Unix 平台上，执行器会尽量把启动的进程放进独立进程组；timeout 会先尝试杀掉整个进程组，再杀直接 child。这能覆盖常见 shell 子进程清理场景。Windows 目前仍只处理直接 child。
 
 ## 当前阶段
 
@@ -140,4 +139,4 @@ CLI crate 内部按层组织：
 - 和 agent action protocol 对齐 typed request/result 命名
 - 设计 executor input/output 如何映射到 capsule
 - 扩展 policy 层，加入命令参数规则、环境继承策略等更细粒度限制
-- 为 session 增加显式 forget/cleanup API，避免长期保存已结束 session
+- 重新设计长任务 session 的统一 request/result 边界
