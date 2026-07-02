@@ -34,7 +34,8 @@ impl Default for CommandPolicy {
 }
 
 impl CommandPolicy {
-    pub(crate) fn validate_command(&self, req: &CmdRequest) -> Result<()> {
+    // Internal validation API
+    pub(super) fn validate_command(&self, req: &CmdRequest) -> Result<()> {
         self.validate_program(&req.program)?;
         self.validate_cwd(req.cwd.as_deref())?;
         self.validate_env(req.env.as_ref())?;
@@ -42,7 +43,7 @@ impl CommandPolicy {
         self.validate_timeout(req.timeout_ms)
     }
 
-    pub(crate) fn validate_command_session(&self, req: &CmdRequest) -> Result<()> {
+    pub(super) fn validate_command_session(&self, req: &CmdRequest) -> Result<()> {
         self.validate_program(&req.program)?;
         self.validate_cwd(req.cwd.as_deref())?;
         self.validate_env(req.env.as_ref())?;
@@ -50,7 +51,7 @@ impl CommandPolicy {
         self.validate_timeout(req.timeout_ms)
     }
 
-    pub(crate) fn validate_shell(&self, req: &ShellCmdRequest) -> Result<()> {
+    pub(super) fn validate_shell(&self, req: &ShellCmdRequest) -> Result<()> {
         if !self.allow_shell {
             return Err(policy_error("shell commands are not allowed by policy"));
         }
@@ -61,7 +62,7 @@ impl CommandPolicy {
         self.validate_timeout(req.timeout_ms)
     }
 
-    pub(crate) fn validate_shell_session(&self, req: &ShellCmdRequest) -> Result<()> {
+    pub(super) fn validate_shell_session(&self, req: &ShellCmdRequest) -> Result<()> {
         if !self.allow_shell {
             return Err(policy_error("shell commands are not allowed by policy"));
         }
@@ -71,7 +72,10 @@ impl CommandPolicy {
         self.validate_background(true)?;
         self.validate_timeout(req.timeout_ms)
     }
+}
 
+impl CommandPolicy {
+    // Private validation helpers
     fn validate_program(&self, program: &str) -> Result<()> {
         let Some(allowed_programs) = &self.allowed_programs else {
             return Ok(());

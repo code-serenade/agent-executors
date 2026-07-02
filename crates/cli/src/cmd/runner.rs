@@ -13,27 +13,13 @@ use super::{
 
 #[derive(Debug, Clone, Default)]
 pub struct CmdRunner {
-    pub(crate) policy: CommandPolicy,
+    pub(super) policy: CommandPolicy,
 }
 
 impl CmdRunner {
+    // Public API
     pub fn new(policy: CommandPolicy) -> Self {
         Self { policy }
-    }
-
-    pub fn run(&self, req: CmdRequest) -> Result<CmdOutput> {
-        self.policy.validate_command(&req)?;
-        let mut cmd = Command::new(&req.program);
-        cmd.args(&req.args);
-
-        self.run_inner(&mut cmd, RunParts::from(req))
-    }
-
-    pub fn run_shell(&self, req: ShellCmdRequest) -> Result<CmdOutput> {
-        self.policy.validate_shell(&req)?;
-        let mut cmd = build_shell_command(&req.command);
-
-        self.run_inner(&mut cmd, RunParts::from(req))
     }
 
     pub fn execute(&self, req: CliExecutionRequest) -> Result<CliExecutionResult> {
@@ -42,8 +28,26 @@ impl CmdRunner {
             CliExecutionRequest::Shell(req) => self.run_shell(req),
         }
     }
+}
 
-    pub(crate) fn run_inner(&self, cmd: &mut Command, parts: RunParts) -> Result<CmdOutput> {
+impl CmdRunner {
+    // Internal execution paths
+    pub(super) fn run(&self, req: CmdRequest) -> Result<CmdOutput> {
+        self.policy.validate_command(&req)?;
+        let mut cmd = Command::new(&req.program);
+        cmd.args(&req.args);
+
+        self.run_inner(&mut cmd, RunParts::from(req))
+    }
+
+    pub(super) fn run_shell(&self, req: ShellCmdRequest) -> Result<CmdOutput> {
+        self.policy.validate_shell(&req)?;
+        let mut cmd = build_shell_command(&req.command);
+
+        self.run_inner(&mut cmd, RunParts::from(req))
+    }
+
+    pub(super) fn run_inner(&self, cmd: &mut Command, parts: RunParts) -> Result<CmdOutput> {
         let started_at = Instant::now();
         process::configure_command(
             cmd,
@@ -82,7 +86,7 @@ impl CmdRunner {
         )
     }
 
-    pub(crate) fn spawn_session_command(
+    pub(super) fn spawn_session_command(
         &self,
         mut cmd: Command,
         req: SessionStartParts,
@@ -94,7 +98,7 @@ impl CmdRunner {
     }
 }
 
-pub(crate) struct RunParts {
+pub(super) struct RunParts {
     cwd: Option<String>,
     env: Option<std::collections::HashMap<String, String>>,
     timeout_ms: Option<u64>,
@@ -129,10 +133,10 @@ impl From<ShellCmdRequest> for RunParts {
     }
 }
 
-pub(crate) struct SessionStartParts {
-    pub(crate) cwd: Option<String>,
-    pub(crate) env: Option<std::collections::HashMap<String, String>>,
-    pub(crate) stdin: Option<super::types::CmdStdin>,
+pub(super) struct SessionStartParts {
+    pub(super) cwd: Option<String>,
+    pub(super) env: Option<std::collections::HashMap<String, String>>,
+    pub(super) stdin: Option<super::types::CmdStdin>,
 }
 
 impl From<WaitOutcome> for super::session::CmdSessionStatus {

@@ -23,9 +23,9 @@ agent-executor-cli = "0.1.0"
 ## Run a Command
 
 ```rust
-use agent_executor_cli::{CliExecutionRequest, CmdRequest, CmdTool};
+use agent_executor_cli::{CliExecutionRequest, CmdRequest, CmdRunner};
 
-let output = CmdTool::execute(CliExecutionRequest::Command(CmdRequest {
+let output = CmdRunner::default().execute(CliExecutionRequest::Command(CmdRequest {
     program: "echo".to_string(),
     args: vec!["hello".to_string()],
     cwd: None,

@@ -1,6 +1,6 @@
 use std::process::Command;
 
-pub(crate) fn build_shell_command(command: &str) -> Command {
+pub(super) fn build_shell_command(command: &str) -> Command {
     if cfg!(target_os = "windows") {
         let mut cmd = Command::new("cmd.exe");
         cmd.arg("/c").arg(command);

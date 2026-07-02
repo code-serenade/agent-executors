@@ -39,6 +39,7 @@ pub struct CmdSessionManager {
 }
 
 impl CmdSessionManager {
+    // Public API
     pub fn new(policy: CommandPolicy) -> Self {
         Self {
             runner: CmdRunner::new(policy),
@@ -130,7 +131,10 @@ impl CmdSessionManager {
             }
         }
     }
+}
 
+impl CmdSessionManager {
+    // Internal helpers
     fn start_inner(&self, cmd: Command, parts: SessionStartParts) -> Result<CmdSession> {
         let mut child = self.runner.spawn_session_command(cmd, parts)?;
         let pid = child.id();

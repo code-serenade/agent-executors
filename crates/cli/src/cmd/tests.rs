@@ -6,17 +6,18 @@ use super::*;
 
 #[test]
 fn command_success_returns_structured_success() {
-    let output = CmdTool::execute(CliExecutionRequest::Command(CmdRequest {
-        program: "echo".to_string(),
-        args: vec!["hello".to_string()],
-        cwd: None,
-        env: None,
-        timeout_ms: None,
-        fail_on_non_zero: false,
-        stdin: None,
-        background: false,
-    }))
-    .unwrap();
+    let output = CmdRunner::default()
+        .execute(CliExecutionRequest::Command(CmdRequest {
+            program: "echo".to_string(),
+            args: vec!["hello".to_string()],
+            cwd: None,
+            env: None,
+            timeout_ms: None,
+            fail_on_non_zero: false,
+            stdin: None,
+            background: false,
+        }))
+        .unwrap();
 
     assert_eq!(output.exit_code, 0);
     assert_eq!(output.status, CmdStatus::Success);
@@ -28,17 +29,18 @@ fn command_success_returns_structured_success() {
 
 #[test]
 fn unified_execute_runs_command_requests() {
-    let output = CmdTool::execute(CliExecutionRequest::Command(CmdRequest {
-        program: "echo".to_string(),
-        args: vec!["hello".to_string()],
-        cwd: None,
-        env: None,
-        timeout_ms: None,
-        fail_on_non_zero: false,
-        stdin: None,
-        background: false,
-    }))
-    .unwrap();
+    let output = CmdRunner::default()
+        .execute(CliExecutionRequest::Command(CmdRequest {
+            program: "echo".to_string(),
+            args: vec!["hello".to_string()],
+            cwd: None,
+            env: None,
+            timeout_ms: None,
+            fail_on_non_zero: false,
+            stdin: None,
+            background: false,
+        }))
+        .unwrap();
 
     assert_eq!(output.status, CmdStatus::Success);
     assert_eq!(output.stdout.trim(), "hello");
@@ -52,16 +54,17 @@ fn shell_command_supports_shell_syntax() {
         "echo 'hello pipe' | grep pipe"
     };
 
-    let output = CmdTool::execute(CliExecutionRequest::Shell(ShellCmdRequest {
-        command: command.to_string(),
-        cwd: None,
-        env: None,
-        timeout_ms: None,
-        fail_on_non_zero: false,
-        stdin: None,
-        background: false,
-    }))
-    .unwrap();
+    let output = CmdRunner::default()
+        .execute(CliExecutionRequest::Shell(ShellCmdRequest {
+            command: command.to_string(),
+            cwd: None,
+            env: None,
+            timeout_ms: None,
+            fail_on_non_zero: false,
+            stdin: None,
+            background: false,
+        }))
+        .unwrap();
 
     assert_eq!(output.status, CmdStatus::Success);
     assert!(output.stdout.contains("hello pipe"));
@@ -69,17 +72,18 @@ fn shell_command_supports_shell_syntax() {
 
 #[test]
 fn timeout_is_structured_output() {
-    let output = CmdTool::execute(CliExecutionRequest::Command(CmdRequest {
-        program: "sleep".to_string(),
-        args: vec!["2".to_string()],
-        cwd: None,
-        env: None,
-        timeout_ms: Some(100),
-        fail_on_non_zero: false,
-        stdin: None,
-        background: false,
-    }))
-    .unwrap();
+    let output = CmdRunner::default()
+        .execute(CliExecutionRequest::Command(CmdRequest {
+            program: "sleep".to_string(),
+            args: vec!["2".to_string()],
+            cwd: None,
+            env: None,
+            timeout_ms: Some(100),
+            fail_on_non_zero: false,
+            stdin: None,
+            background: false,
+        }))
+        .unwrap();
 
     assert_eq!(output.status, CmdStatus::TimedOut);
     assert_eq!(output.exit_code, -1);
@@ -88,16 +92,17 @@ fn timeout_is_structured_output() {
 
 #[test]
 fn non_zero_exit_can_be_observed_without_error() {
-    let output = CmdTool::execute(CliExecutionRequest::Shell(ShellCmdRequest {
-        command: exit_command(9),
-        cwd: None,
-        env: None,
-        timeout_ms: None,
-        fail_on_non_zero: false,
-        stdin: None,
-        background: false,
-    }))
-    .unwrap();
+    let output = CmdRunner::default()
+        .execute(CliExecutionRequest::Shell(ShellCmdRequest {
+            command: exit_command(9),
+            cwd: None,
+            env: None,
+            timeout_ms: None,
+            fail_on_non_zero: false,
+            stdin: None,
+            background: false,
+        }))
+        .unwrap();
 
     assert_eq!(output.exit_code, 9);
     assert_eq!(output.status, CmdStatus::Failed(9));
@@ -105,7 +110,7 @@ fn non_zero_exit_can_be_observed_without_error() {
 
 #[test]
 fn non_zero_exit_can_fail() {
-    let result = CmdTool::execute(CliExecutionRequest::Shell(ShellCmdRequest {
+    let result = CmdRunner::default().execute(CliExecutionRequest::Shell(ShellCmdRequest {
         command: exit_command(7),
         cwd: None,
         env: None,
@@ -121,30 +126,34 @@ fn non_zero_exit_can_fail() {
 
 #[test]
 fn stdin_text_bytes_file_and_null_are_supported() {
-    let text = CmdTool::execute(CliExecutionRequest::Command(cat_request(Some(
-        CmdStdin::Text("hello text".to_string()),
-    ))))
-    .unwrap();
+    let text = CmdRunner::default()
+        .execute(CliExecutionRequest::Command(cat_request(Some(
+            CmdStdin::Text("hello text".to_string()),
+        ))))
+        .unwrap();
     assert_eq!(text.stdout, "hello text");
 
-    let bytes = CmdTool::execute(CliExecutionRequest::Command(cat_request(Some(
-        CmdStdin::Bytes(b"hello bytes".to_vec()),
-    ))))
-    .unwrap();
+    let bytes = CmdRunner::default()
+        .execute(CliExecutionRequest::Command(cat_request(Some(
+            CmdStdin::Bytes(b"hello bytes".to_vec()),
+        ))))
+        .unwrap();
     assert_eq!(bytes.stdout, "hello bytes");
 
     let mut temp_file = NamedTempFile::new().unwrap();
     write!(temp_file, "hello file").unwrap();
-    let file = CmdTool::execute(CliExecutionRequest::Command(cat_request(Some(
-        CmdStdin::File(temp_file.path().to_path_buf()),
-    ))))
-    .unwrap();
+    let file = CmdRunner::default()
+        .execute(CliExecutionRequest::Command(cat_request(Some(
+            CmdStdin::File(temp_file.path().to_path_buf()),
+        ))))
+        .unwrap();
     assert_eq!(file.stdout, "hello file");
 
-    let null = CmdTool::execute(CliExecutionRequest::Command(cat_request(Some(
-        CmdStdin::Null,
-    ))))
-    .unwrap();
+    let null = CmdRunner::default()
+        .execute(CliExecutionRequest::Command(cat_request(Some(
+            CmdStdin::Null,
+        ))))
+        .unwrap();
     assert!(null.stdout.is_empty());
 }
 
@@ -154,7 +163,7 @@ fn policy_can_reject_shell_and_large_timeout() {
         allow_shell: false,
         ..CommandPolicy::default()
     });
-    let shell_result = no_shell.run_shell(ShellCmdRequest {
+    let shell_result = no_shell.execute(CliExecutionRequest::Shell(ShellCmdRequest {
         command: "echo nope".to_string(),
         cwd: None,
         env: None,
@@ -162,14 +171,14 @@ fn policy_can_reject_shell_and_large_timeout() {
         fail_on_non_zero: false,
         stdin: None,
         background: false,
-    });
+    }));
     assert!(shell_result.is_err());
 
     let bounded = CmdRunner::new(CommandPolicy {
         max_timeout_ms: Some(10),
         ..CommandPolicy::default()
     });
-    let timeout_result = bounded.run(CmdRequest {
+    let timeout_result = bounded.execute(CliExecutionRequest::Command(CmdRequest {
         program: "echo".to_string(),
         args: vec!["hello".to_string()],
         cwd: None,
@@ -178,7 +187,7 @@ fn policy_can_reject_shell_and_large_timeout() {
         fail_on_non_zero: false,
         stdin: None,
         background: false,
-    });
+    }));
     assert!(timeout_result.is_err());
 }
 
@@ -192,7 +201,7 @@ fn policy_can_restrict_program_cwd_and_env() {
         ..CommandPolicy::default()
     });
 
-    let allowed = runner.run(CmdRequest {
+    let allowed = runner.execute(CliExecutionRequest::Command(CmdRequest {
         program: "echo".to_string(),
         args: vec!["hello".to_string()],
         cwd: Some(temp_dir.path().display().to_string()),
@@ -204,10 +213,10 @@ fn policy_can_restrict_program_cwd_and_env() {
         fail_on_non_zero: false,
         stdin: None,
         background: false,
-    });
+    }));
     assert!(allowed.is_ok());
 
-    let blocked_program = runner.run(CmdRequest {
+    let blocked_program = runner.execute(CliExecutionRequest::Command(CmdRequest {
         program: "cat".to_string(),
         args: vec![],
         cwd: Some(temp_dir.path().display().to_string()),
@@ -216,10 +225,10 @@ fn policy_can_restrict_program_cwd_and_env() {
         fail_on_non_zero: false,
         stdin: Some(CmdStdin::Null),
         background: false,
-    });
+    }));
     assert!(blocked_program.is_err());
 
-    let blocked_env = runner.run(CmdRequest {
+    let blocked_env = runner.execute(CliExecutionRequest::Command(CmdRequest {
         program: "echo".to_string(),
         args: vec!["hello".to_string()],
         cwd: Some(temp_dir.path().display().to_string()),
@@ -231,7 +240,7 @@ fn policy_can_restrict_program_cwd_and_env() {
         fail_on_non_zero: false,
         stdin: None,
         background: false,
-    });
+    }));
     assert!(blocked_env.is_err());
 }
 
@@ -243,7 +252,7 @@ fn policy_can_limit_captured_output_size() {
     });
 
     let output = runner
-        .run_shell(ShellCmdRequest {
+        .execute(CliExecutionRequest::Shell(ShellCmdRequest {
             command: output_limit_command(),
             cwd: None,
             env: None,
@@ -251,7 +260,7 @@ fn policy_can_limit_captured_output_size() {
             fail_on_non_zero: false,
             stdin: None,
             background: false,
-        })
+        }))
         .unwrap();
 
     assert_eq!(output.stdout, "12345");
@@ -315,16 +324,17 @@ fn session_manager_captures_output_snapshot() {
 #[cfg(not(target_os = "windows"))]
 #[test]
 fn non_utf8_stdout_is_preserved_lossily() {
-    let output = CmdTool::execute(CliExecutionRequest::Shell(ShellCmdRequest {
-        command: "printf '\\377\\376abc'".to_string(),
-        cwd: None,
-        env: None,
-        timeout_ms: None,
-        fail_on_non_zero: false,
-        stdin: None,
-        background: false,
-    }))
-    .unwrap();
+    let output = CmdRunner::default()
+        .execute(CliExecutionRequest::Shell(ShellCmdRequest {
+            command: "printf '\\377\\376abc'".to_string(),
+            cwd: None,
+            env: None,
+            timeout_ms: None,
+            fail_on_non_zero: false,
+            stdin: None,
+            background: false,
+        }))
+        .unwrap();
 
     assert!(output.stdout.contains("abc"));
     assert!(!output.stdout.is_empty());

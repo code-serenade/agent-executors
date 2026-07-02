@@ -99,7 +99,7 @@ cargo fmt --all && cargo test --workspace
 - `ShellCmdRequest`
 - `CmdStdin`
 - `CmdOutput`
-- `CmdTool::execute`
+- `CmdRunner::execute`
 - `CmdRunner`
 - `CommandPolicy`
 - `CmdSessionManager`

@@ -67,13 +67,13 @@ pub struct CmdSessionOutput {
 }
 
 impl CmdSessionOutput {
-    pub(crate) fn new(stdout: String, stderr: String) -> Self {
+    pub(super) fn new(stdout: String, stderr: String) -> Self {
         Self { stdout, stderr }
     }
 }
 
 impl CmdOutput {
-    pub(crate) fn background(pid: u32) -> Self {
+    pub(super) fn background(pid: u32) -> Self {
         Self {
             stdout: String::new(),
             stderr: String::new(),
@@ -86,7 +86,7 @@ impl CmdOutput {
         }
     }
 
-    pub(crate) fn foreground(
+    pub(super) fn foreground(
         stdout: String,
         stderr: String,
         exit_code: i32,
@@ -112,7 +112,7 @@ impl CmdOutput {
         }
     }
 
-    pub(crate) fn timed_out(
+    pub(super) fn timed_out(
         stdout: String,
         stderr: String,
         duration_ms: u128,

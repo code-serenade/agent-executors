@@ -15,12 +15,12 @@ use wait_timeout::ChildExt;
 
 use super::types::{CmdOutput, CmdStatus, CmdStdin};
 
-pub(crate) enum WaitOutcome {
+pub(super) enum WaitOutcome {
     Exited(ExitStatus),
     TimedOut,
 }
 
-pub(crate) fn configure_command(
+pub(super) fn configure_command(
     cmd: &mut Command,
     cwd: Option<String>,
     env: Option<HashMap<String, String>>,
@@ -42,7 +42,7 @@ pub(crate) fn configure_command(
     Ok(())
 }
 
-pub(crate) fn configure_session_command(
+pub(super) fn configure_session_command(
     cmd: &mut Command,
     cwd: Option<String>,
     env: Option<HashMap<String, String>>,
@@ -64,11 +64,11 @@ pub(crate) fn configure_session_command(
     Ok(())
 }
 
-pub(crate) fn spawn_child(cmd: &mut Command) -> Result<Child> {
+pub(super) fn spawn_child(cmd: &mut Command) -> Result<Child> {
     cmd.spawn().map_err(Error::tool_io)
 }
 
-pub(crate) fn take_output_reader<R>(
+pub(super) fn take_output_reader<R>(
     pipe: &mut Option<R>,
     max_bytes: Option<usize>,
 ) -> Option<thread::JoinHandle<io::Result<CapturedBytes>>>
@@ -78,7 +78,7 @@ where
     pipe.take().map(|reader| spawn_reader(reader, max_bytes))
 }
 
-pub(crate) fn write_stdin(child: &mut Child, stdin_content: Option<&CmdStdin>) -> Result<()> {
+pub(super) fn write_stdin(child: &mut Child, stdin_content: Option<&CmdStdin>) -> Result<()> {
     let Some(stdin_content) = stdin_content else {
         return Ok(());
     };
@@ -104,7 +104,7 @@ pub(crate) fn write_stdin(child: &mut Child, stdin_content: Option<&CmdStdin>) -
     Ok(())
 }
 
-pub(crate) fn wait_for_child(child: &mut Child, timeout_ms: Option<u64>) -> Result<WaitOutcome> {
+pub(super) fn wait_for_child(child: &mut Child, timeout_ms: Option<u64>) -> Result<WaitOutcome> {
     match timeout_ms {
         Some(timeout_ms) => wait_with_timeout(child, timeout_ms),
         None => child
@@ -114,7 +114,7 @@ pub(crate) fn wait_for_child(child: &mut Child, timeout_ms: Option<u64>) -> Resu
     }
 }
 
-pub(crate) fn collect_output(
+pub(super) fn collect_output(
     handle: Option<thread::JoinHandle<io::Result<CapturedBytes>>>,
 ) -> Result<CapturedOutput> {
     let Some(handle) = handle else {
@@ -133,13 +133,13 @@ pub(crate) fn collect_output(
 }
 
 #[derive(Debug)]
-pub(crate) struct SessionOutputCapture {
+pub(super) struct SessionOutputCapture {
     stdout: Arc<Mutex<Vec<u8>>>,
     stderr: Arc<Mutex<Vec<u8>>>,
 }
 
 impl SessionOutputCapture {
-    pub(crate) fn snapshot(&self) -> Result<(String, String)> {
+    pub(super) fn snapshot(&self) -> Result<(String, String)> {
         Ok((
             snapshot_buffer(&self.stdout)?,
             snapshot_buffer(&self.stderr)?,
@@ -147,14 +147,14 @@ impl SessionOutputCapture {
     }
 }
 
-pub(crate) fn capture_session_output(child: &mut Child) -> SessionOutputCapture {
+pub(super) fn capture_session_output(child: &mut Child) -> SessionOutputCapture {
     SessionOutputCapture {
         stdout: capture_pipe(&mut child.stdout),
         stderr: capture_pipe(&mut child.stderr),
     }
 }
 
-pub(crate) fn build_output(
+pub(super) fn build_output(
     outcome: WaitOutcome,
     stdout_handle: Option<thread::JoinHandle<io::Result<CapturedBytes>>>,
     stderr_handle: Option<thread::JoinHandle<io::Result<CapturedBytes>>>,
@@ -242,16 +242,16 @@ fn kill_timed_out_child(child: &mut Child) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn stop_child(child: &mut Child) -> Result<ExitStatus> {
+pub(super) fn stop_child(child: &mut Child) -> Result<ExitStatus> {
     kill_child_process_group(child);
     child.kill().map_err(Error::tool_io)?;
     child.wait().map_err(Error::tool_io)
 }
 
 #[derive(Debug)]
-pub(crate) struct CapturedOutput {
-    pub(crate) text: String,
-    pub(crate) truncated: bool,
+pub(super) struct CapturedOutput {
+    pub(super) text: String,
+    pub(super) truncated: bool,
 }
 
 impl CapturedOutput {
@@ -264,7 +264,7 @@ impl CapturedOutput {
 }
 
 #[derive(Debug)]
-pub(crate) struct CapturedBytes {
+pub(super) struct CapturedBytes {
     bytes: Vec<u8>,
     truncated: bool,
 }

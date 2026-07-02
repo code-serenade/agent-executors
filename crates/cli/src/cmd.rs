@@ -14,11 +14,3 @@ pub use types::{
     CliExecutionRequest, CliExecutionResult, CmdOutput, CmdRequest, CmdSessionOutput, CmdStatus,
     CmdStdin, ShellCmdRequest,
 };
-
-pub struct CmdTool;
-
-impl CmdTool {
-    pub fn execute(req: CliExecutionRequest) -> agent_executor_core::Result<CliExecutionResult> {
-        CmdRunner::default().execute(req)
-    }
-}
