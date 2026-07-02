@@ -315,11 +315,24 @@ capsule 的 owner、semantic_type、lifecycle、storage policy 都应该由 agen
 
 ```text
 crates/
+  agent-executor/
   core/
   cli/
 ```
 
 这个方向是对的。
+
+`agent-executor` 是对外统一 facade crate。它通过 feature re-export 具体执行器，例如：
+
+```toml
+agent-executor = { version = "0.1.0", features = ["cli"] }
+```
+
+```rust
+use agent_executor::{cli::CliExecutor, Result};
+```
+
+这样外部用户未来可以只依赖一个 crate，同时按 feature 选择启用 CLI、browser、file 等 executor。
 
 `core` 应该放所有执行器共享的基础类型，例如：
 

@@ -21,6 +21,7 @@ include = [
 ]
 
 [workspace.dependencies]
+agent-executor = { path = "crates/agent-executor" }
 agent-executor-core = { path = "crates/core" }
 agent-executor-cli = { path = "crates/cli" }
 libc = "0.2"

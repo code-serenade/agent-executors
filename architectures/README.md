@@ -77,13 +77,28 @@ executor 输出应该是 capsule-ready data，而不是 capsule 本身。capsule
 ```text
 agent-executors/
   crates/
+    agent-executor/
     core/
     cli/
 ```
 
-当前基础 crate 是 `agent-executor-core`，第一个执行器 crate 是 `agent-executor-cli`。
+当前对外 facade crate 是 `agent-executor`，基础 crate 是 `agent-executor-core`，第一个执行器 crate 是 `agent-executor-cli`。
 
 `agent-executor-core` 负责放置跨执行器共享的稳定基础类型，比如 workspace 级 `Error` 和 `Result`。具体执行器可以继续隐藏自己的内部错误细节，并通过 core 提供的公共错误入口返回给调用方。
+
+`agent-executor` 负责作为外部统一入口，通过 feature 选择启用哪些执行器。例如外部只需要 CLI executor 时，可以依赖：
+
+```toml
+agent-executor = { version = "0.1.0", features = ["cli"] }
+```
+
+然后使用：
+
+```rust
+use agent_executor::{cli::CliExecutor, Result};
+```
+
+各 executor crate 仍然保持独立发布和独立使用能力。如果外部只想要最小 CLI 依赖，也可以直接依赖 `agent-executor-cli`。
 
 未来如果增加其它执行器，应该继续新增 crate，而不是把 `cli` crate 变成混合工具集合。
 
