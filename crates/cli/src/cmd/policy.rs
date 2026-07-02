@@ -1,4 +1,8 @@
-use std::io;
+use std::{
+    collections::{HashMap, HashSet},
+    io,
+    path::{Path, PathBuf},
+};
 
 use agent_executor_core::{Error, Result};
 
@@ -9,6 +13,10 @@ pub struct CommandPolicy {
     pub allow_shell: bool,
     pub allow_background: bool,
     pub max_timeout_ms: Option<u64>,
+    pub max_output_bytes: Option<usize>,
+    pub allowed_programs: Option<HashSet<String>>,
+    pub allowed_cwd_roots: Vec<PathBuf>,
+    pub allowed_env_vars: Option<HashSet<String>>,
 }
 
 impl Default for CommandPolicy {
@@ -17,17 +25,27 @@ impl Default for CommandPolicy {
             allow_shell: true,
             allow_background: true,
             max_timeout_ms: None,
+            max_output_bytes: None,
+            allowed_programs: None,
+            allowed_cwd_roots: Vec::new(),
+            allowed_env_vars: None,
         }
     }
 }
 
 impl CommandPolicy {
     pub(crate) fn validate_command(&self, req: &CmdRequest) -> Result<()> {
+        self.validate_program(&req.program)?;
+        self.validate_cwd(req.cwd.as_deref())?;
+        self.validate_env(req.env.as_ref())?;
         self.validate_background(req.background)?;
         self.validate_timeout(req.timeout_ms)
     }
 
     pub(crate) fn validate_command_session(&self, req: &CmdRequest) -> Result<()> {
+        self.validate_program(&req.program)?;
+        self.validate_cwd(req.cwd.as_deref())?;
+        self.validate_env(req.env.as_ref())?;
         self.validate_background(true)?;
         self.validate_timeout(req.timeout_ms)
     }
@@ -37,6 +55,8 @@ impl CommandPolicy {
             return Err(policy_error("shell commands are not allowed by policy"));
         }
 
+        self.validate_cwd(req.cwd.as_deref())?;
+        self.validate_env(req.env.as_ref())?;
         self.validate_background(req.background)?;
         self.validate_timeout(req.timeout_ms)
     }
@@ -46,8 +66,72 @@ impl CommandPolicy {
             return Err(policy_error("shell commands are not allowed by policy"));
         }
 
+        self.validate_cwd(req.cwd.as_deref())?;
+        self.validate_env(req.env.as_ref())?;
         self.validate_background(true)?;
         self.validate_timeout(req.timeout_ms)
+    }
+
+    fn validate_program(&self, program: &str) -> Result<()> {
+        let Some(allowed_programs) = &self.allowed_programs else {
+            return Ok(());
+        };
+
+        if allowed_programs.contains(program) {
+            return Ok(());
+        }
+
+        let file_name = Path::new(program)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(program);
+
+        if allowed_programs.contains(file_name) {
+            return Ok(());
+        }
+
+        Err(policy_error(format!(
+            "program `{program}` is not allowed by policy"
+        )))
+    }
+
+    fn validate_cwd(&self, cwd: Option<&str>) -> Result<()> {
+        if self.allowed_cwd_roots.is_empty() {
+            return Ok(());
+        };
+
+        let Some(cwd) = cwd else {
+            return Err(policy_error("cwd is required by policy"));
+        };
+
+        let cwd = canonicalize_policy_path(cwd)?;
+        for root in &self.allowed_cwd_roots {
+            let root = canonicalize_policy_path(root)?;
+            if cwd.starts_with(root) {
+                return Ok(());
+            }
+        }
+
+        Err(policy_error(format!(
+            "cwd `{}` is not allowed by policy",
+            cwd.display()
+        )))
+    }
+
+    fn validate_env(&self, env: Option<&HashMap<String, String>>) -> Result<()> {
+        let (Some(allowed_env_vars), Some(env)) = (&self.allowed_env_vars, env) else {
+            return Ok(());
+        };
+
+        for key in env.keys() {
+            if !allowed_env_vars.contains(key) {
+                return Err(policy_error(format!(
+                    "env var `{key}` is not allowed by policy"
+                )));
+            }
+        }
+
+        Ok(())
     }
 
     fn validate_background(&self, background: bool) -> Result<()> {
@@ -73,6 +157,10 @@ impl CommandPolicy {
 
         Ok(())
     }
+}
+
+fn canonicalize_policy_path(path: impl AsRef<Path>) -> Result<PathBuf> {
+    path.as_ref().canonicalize().map_err(Error::tool_io)
 }
 
 fn policy_error(message: impl Into<String>) -> Error {

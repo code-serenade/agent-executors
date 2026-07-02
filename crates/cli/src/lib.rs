@@ -1,6 +1,7 @@
 pub mod cmd;
 
 pub use cmd::{
-    CmdOutput, CmdRequest, CmdRunner, CmdSession, CmdSessionManager, CmdSessionStatus, CmdStatus,
-    CmdStdin, CmdTool, CommandPolicy, ShellCmdRequest,
+    CliExecutionRequest, CliExecutionResult, CmdOutput, CmdRequest, CmdRunner, CmdSession,
+    CmdSessionManager, CmdSessionOutput, CmdSessionStatus, CmdStatus, CmdStdin, CmdTool,
+    CommandPolicy, ShellCmdRequest,
 };

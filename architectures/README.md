@@ -40,6 +40,36 @@ executor 返回：
 
 executor 不判断用户任务是否完成，不创建 worker，不路由消息，不写 memory，也不解释业务目标。这些判断都留在 agent 的 cognition 循环里。
 
+## 通用执行系统
+
+`agent-executors` 应该设计成通用执行系统，而不是 AgentOS 的内部模块。
+
+因此它不应该知道：
+
+- agent
+- cognition
+- action
+- worker
+- semion
+- capsule
+
+它只应该知道：
+
+- execution request
+- execution result
+- executor trait
+- executor status
+- executor error
+
+这样同一个 executor 可以被不同上层系统复用：
+
+- AgentOS 可以把 request/result 封装成 capsule。
+- 普通 CLI app 可以直接打印 result。
+- Web service 可以把 result 转成 HTTP response。
+- 测试工具可以直接用 result 做断言。
+
+executor 输出应该是 capsule-ready data，而不是 capsule 本身。capsule 封装属于 agent adapter/runtime 层。
+
 ## Workspace 形态
 
 这个 workspace 为多个执行器预留空间：
@@ -93,9 +123,11 @@ CLI crate 内部按层组织：
 
 `fail_on_non_zero` 只决定非 0 退出码是否升级成 `Error`；即使不升级，调用方仍然可以从 `CmdOutput.status` 读到 `Failed(code)`。timeout 不再作为普通执行失败抛出，而是返回 `TimedOut` 状态，真正的 `Error` 留给 spawn/io/policy 这类执行器自身失败。
 
-长任务使用 `CmdSessionManager` 管理。它负责启动命令、返回 session id/pid、查询是否仍在运行、以及停止进程。session 是 executor 内部运行态，不承担 agent capsule 写入；agent 项目可以把 `CmdOutput` 或 `CmdSessionStatus` 映射成自己的 capsule 数据。
+长任务使用 `CmdSessionManager` 管理。它负责启动命令、返回 session id/pid、查询是否仍在运行、停止进程、以及读取当前 stdout/stderr 快照。session 是 executor 内部运行态，不承担 agent capsule 写入；agent 项目可以把 `CmdOutput`、`CmdSessionStatus` 或 `CmdSessionOutput` 映射成自己的 capsule 数据。
 
-安全策略目前在 `CommandPolicy` 里提供最小入口，包括是否允许 shell、是否允许后台任务、以及最大 timeout。更高层的 allowlist、cwd 限制、环境变量过滤等策略以后应该继续扩展在 policy 层，而不是混进 process runner。
+安全策略在 `CommandPolicy` 里提供统一入口，包括是否允许 shell、是否允许后台任务、最大 timeout、可执行程序 allowlist、cwd root allowlist、以及请求级 env var allowlist。以后继续扩展更细粒度限制时，应该放在 policy 层，而不是混进 process runner。
+
+在 Unix 平台上，执行器会尽量把启动的进程放进独立进程组；timeout 和 session stop 会先尝试杀掉整个进程组，再杀直接 child。这能覆盖常见 shell 子进程清理场景。Windows 目前仍只处理直接 child。
 
 ## 当前阶段
 
@@ -107,4 +139,5 @@ CLI crate 内部按层组织：
 
 - 和 agent action protocol 对齐 typed request/result 命名
 - 设计 executor input/output 如何映射到 capsule
-- 扩展 policy 层，加入 cwd/env/command allowlist 等更细粒度限制
+- 扩展 policy 层，加入命令参数规则、环境继承策略等更细粒度限制
+- 为 session 增加显式 forget/cleanup API，避免长期保存已结束 session

@@ -7,6 +7,7 @@ name = "agent-executor-cli"
 version = "0.1.0"
 dependencies = [
  "agent-executor-core",
+ "libc",
  "tempfile",
  "wait-timeout",
 ]

@@ -32,6 +32,14 @@ pub struct ShellCmdRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CliExecutionRequest {
+    Command(CmdRequest),
+    Shell(ShellCmdRequest),
+}
+
+pub type CliExecutionResult = CmdOutput;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CmdStatus {
     Success,
     Failed(i32),
@@ -47,6 +55,21 @@ pub struct CmdOutput {
     pub exit_code: i32,
     pub pid: Option<u32>,
     pub status: CmdStatus,
+    pub duration_ms: u128,
+    pub stdout_truncated: bool,
+    pub stderr_truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CmdSessionOutput {
+    pub stdout: String,
+    pub stderr: String,
+}
+
+impl CmdSessionOutput {
+    pub(crate) fn new(stdout: String, stderr: String) -> Self {
+        Self { stdout, stderr }
+    }
 }
 
 impl CmdOutput {
@@ -57,10 +80,20 @@ impl CmdOutput {
             exit_code: 0,
             pid: Some(pid),
             status: CmdStatus::Started,
+            duration_ms: 0,
+            stdout_truncated: false,
+            stderr_truncated: false,
         }
     }
 
-    pub(crate) fn foreground(stdout: String, stderr: String, exit_code: i32) -> Self {
+    pub(crate) fn foreground(
+        stdout: String,
+        stderr: String,
+        exit_code: i32,
+        duration_ms: u128,
+        stdout_truncated: bool,
+        stderr_truncated: bool,
+    ) -> Self {
         let status = match exit_code {
             0 => CmdStatus::Success,
             -1 => CmdStatus::Unknown,
@@ -73,16 +106,28 @@ impl CmdOutput {
             exit_code,
             pid: None,
             status,
+            duration_ms,
+            stdout_truncated,
+            stderr_truncated,
         }
     }
 
-    pub(crate) fn timed_out(stdout: String, stderr: String) -> Self {
+    pub(crate) fn timed_out(
+        stdout: String,
+        stderr: String,
+        duration_ms: u128,
+        stdout_truncated: bool,
+        stderr_truncated: bool,
+    ) -> Self {
         Self {
             stdout,
             stderr,
             exit_code: -1,
             pid: None,
             status: CmdStatus::TimedOut,
+            duration_ms,
+            stdout_truncated,
+            stderr_truncated,
         }
     }
 }

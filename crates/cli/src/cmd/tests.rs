@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::{collections::HashSet, io::Write};
 
 use tempfile::NamedTempFile;
 
@@ -21,7 +21,27 @@ fn command_success_returns_structured_success() {
     assert_eq!(output.exit_code, 0);
     assert_eq!(output.status, CmdStatus::Success);
     assert_eq!(output.stdout.trim(), "hello");
+    assert!(!output.stdout_truncated);
+    assert!(!output.stderr_truncated);
     assert!(output.pid.is_none());
+}
+
+#[test]
+fn unified_execute_runs_command_requests() {
+    let output = CmdTool::execute(CliExecutionRequest::Command(CmdRequest {
+        program: "echo".to_string(),
+        args: vec!["hello".to_string()],
+        cwd: None,
+        env: None,
+        timeout_ms: None,
+        fail_on_non_zero: false,
+        stdin: None,
+        background: false,
+    }))
+    .unwrap();
+
+    assert_eq!(output.status, CmdStatus::Success);
+    assert_eq!(output.stdout.trim(), "hello");
 }
 
 #[test]
@@ -63,6 +83,7 @@ fn timeout_is_structured_output() {
 
     assert_eq!(output.status, CmdStatus::TimedOut);
     assert_eq!(output.exit_code, -1);
+    assert!(output.duration_ms >= 50);
 }
 
 #[test]
@@ -153,6 +174,83 @@ fn policy_can_reject_shell_and_large_timeout() {
 }
 
 #[test]
+fn policy_can_restrict_program_cwd_and_env() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let runner = CmdRunner::new(CommandPolicy {
+        allowed_programs: Some(HashSet::from(["echo".to_string()])),
+        allowed_cwd_roots: vec![temp_dir.path().to_path_buf()],
+        allowed_env_vars: Some(HashSet::from(["SAFE_ENV".to_string()])),
+        ..CommandPolicy::default()
+    });
+
+    let allowed = runner.run(CmdRequest {
+        program: "echo".to_string(),
+        args: vec!["hello".to_string()],
+        cwd: Some(temp_dir.path().display().to_string()),
+        env: Some(std::collections::HashMap::from([(
+            "SAFE_ENV".to_string(),
+            "1".to_string(),
+        )])),
+        timeout_ms: None,
+        fail_on_non_zero: false,
+        stdin: None,
+        background: false,
+    });
+    assert!(allowed.is_ok());
+
+    let blocked_program = runner.run(CmdRequest {
+        program: "cat".to_string(),
+        args: vec![],
+        cwd: Some(temp_dir.path().display().to_string()),
+        env: None,
+        timeout_ms: None,
+        fail_on_non_zero: false,
+        stdin: Some(CmdStdin::Null),
+        background: false,
+    });
+    assert!(blocked_program.is_err());
+
+    let blocked_env = runner.run(CmdRequest {
+        program: "echo".to_string(),
+        args: vec!["hello".to_string()],
+        cwd: Some(temp_dir.path().display().to_string()),
+        env: Some(std::collections::HashMap::from([(
+            "UNSAFE_ENV".to_string(),
+            "1".to_string(),
+        )])),
+        timeout_ms: None,
+        fail_on_non_zero: false,
+        stdin: None,
+        background: false,
+    });
+    assert!(blocked_env.is_err());
+}
+
+#[test]
+fn policy_can_limit_captured_output_size() {
+    let runner = CmdRunner::new(CommandPolicy {
+        max_output_bytes: Some(5),
+        ..CommandPolicy::default()
+    });
+
+    let output = runner
+        .run_shell(ShellCmdRequest {
+            command: output_limit_command(),
+            cwd: None,
+            env: None,
+            timeout_ms: None,
+            fail_on_non_zero: false,
+            stdin: None,
+            background: false,
+        })
+        .unwrap();
+
+    assert_eq!(output.stdout, "12345");
+    assert!(output.stdout_truncated);
+    assert!(!output.stderr_truncated);
+}
+
+#[test]
 fn session_manager_can_start_query_and_stop() {
     let manager = CmdSessionManager::default();
     let session = manager
@@ -177,7 +275,32 @@ fn session_manager_can_start_query_and_stop() {
         manager.stop(session).unwrap(),
         CmdSessionStatus::Exited(_)
     ));
-    assert_eq!(manager.status(session).unwrap(), CmdSessionStatus::Unknown);
+    assert!(matches!(
+        manager.status(session).unwrap(),
+        CmdSessionStatus::Exited(_)
+    ));
+}
+
+#[test]
+fn session_manager_captures_output_snapshot() {
+    let manager = CmdSessionManager::default();
+    let session = manager
+        .start_shell(ShellCmdRequest {
+            command: session_output_command(),
+            cwd: None,
+            env: None,
+            timeout_ms: None,
+            fail_on_non_zero: false,
+            stdin: None,
+            background: true,
+        })
+        .unwrap();
+
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let output = manager.output(session).unwrap();
+    assert_eq!(output.stdout, "hello");
+    assert!(output.stderr.is_empty());
+    let _ = manager.stop(session).unwrap();
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -216,5 +339,21 @@ fn exit_command(code: i32) -> String {
         format!("cmd /c exit {code}")
     } else {
         format!("sh -c 'exit {code}'")
+    }
+}
+
+fn session_output_command() -> String {
+    if cfg!(target_os = "windows") {
+        "echo hello & timeout /t 1 > nul".to_string()
+    } else {
+        "printf hello; sleep 1".to_string()
+    }
+}
+
+fn output_limit_command() -> String {
+    if cfg!(target_os = "windows") {
+        "echo 123456789".to_string()
+    } else {
+        "printf 123456789".to_string()
     }
 }

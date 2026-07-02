@@ -1,4 +1,4 @@
-use std::process::Command;
+use std::{process::Command, time::Instant};
 
 use agent_executor_core::Result;
 
@@ -6,7 +6,9 @@ use super::{
     policy::CommandPolicy,
     process::{self, WaitOutcome},
     shell::build_shell_command,
-    types::{CmdOutput, CmdRequest, CmdStdin, ShellCmdRequest},
+    types::{
+        CliExecutionRequest, CliExecutionResult, CmdOutput, CmdRequest, CmdStdin, ShellCmdRequest,
+    },
 };
 
 #[derive(Debug, Clone, Default)]
@@ -34,7 +36,15 @@ impl CmdRunner {
         self.run_inner(&mut cmd, RunParts::from(req))
     }
 
+    pub fn execute(&self, req: CliExecutionRequest) -> Result<CliExecutionResult> {
+        match req {
+            CliExecutionRequest::Command(req) => self.run(req),
+            CliExecutionRequest::Shell(req) => self.run_shell(req),
+        }
+    }
+
     pub(crate) fn run_inner(&self, cmd: &mut Command, parts: RunParts) -> Result<CmdOutput> {
+        let started_at = Instant::now();
         process::configure_command(
             cmd,
             parts.cwd,
@@ -43,8 +53,10 @@ impl CmdRunner {
             parts.background,
         )?;
         let mut child = process::spawn_child(cmd)?;
-        let stdout_handle = process::take_output_reader(&mut child.stdout);
-        let stderr_handle = process::take_output_reader(&mut child.stderr);
+        let stdout_handle =
+            process::take_output_reader(&mut child.stdout, self.policy.max_output_bytes);
+        let stderr_handle =
+            process::take_output_reader(&mut child.stderr, self.policy.max_output_bytes);
 
         process::write_stdin(&mut child, parts.stdin.as_ref())?;
 
@@ -66,6 +78,7 @@ impl CmdRunner {
             stdout_handle,
             stderr_handle,
             parts.fail_on_non_zero,
+            started_at.elapsed().as_millis(),
         )
     }
 
@@ -74,7 +87,7 @@ impl CmdRunner {
         mut cmd: Command,
         req: SessionStartParts,
     ) -> Result<std::process::Child> {
-        process::configure_command(&mut cmd, req.cwd, req.env, req.stdin.as_ref(), true)?;
+        process::configure_session_command(&mut cmd, req.cwd, req.env, req.stdin.as_ref())?;
         let mut child = process::spawn_child(&mut cmd)?;
         process::write_stdin(&mut child, req.stdin.as_ref())?;
         Ok(child)

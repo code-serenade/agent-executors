@@ -16,6 +16,7 @@ include.workspace = true
 
 [dependencies]
 agent-executor-core.workspace = true
+libc.workspace = true
 wait-timeout.workspace = true
 
 [dev-dependencies]
