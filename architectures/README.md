@@ -75,6 +75,28 @@ CLI executor 提供两种命令模式：
 
 之所以需要 shell 模式，是因为很多本地操作并不是一个单独命令，而是一段 shell 脚本。管道、重定向、通配符展开、环境变量展开、条件执行、多命令串联，都属于 shell 模式。
 
+CLI crate 内部按层组织：
+
+- `types`：请求、输出、执行状态等稳定数据结构
+- `runner`：同步命令执行入口
+- `process`：底层进程配置、stdin/stdout/stderr、wait/timeout 处理
+- `shell`：平台相关 shell 命令构造
+- `session`：长任务 session 的启动、查询和停止
+- `policy`：低层执行安全策略入口
+
+同步执行结果使用结构化状态表达：
+
+- `Success`：命令退出码为 0
+- `Failed(code)`：命令已经结束，但退出码非 0
+- `TimedOut`：命令超过 timeout 后被终止
+- `Started`：后台命令或 session 已启动
+
+`fail_on_non_zero` 只决定非 0 退出码是否升级成 `Error`；即使不升级，调用方仍然可以从 `CmdOutput.status` 读到 `Failed(code)`。timeout 不再作为普通执行失败抛出，而是返回 `TimedOut` 状态，真正的 `Error` 留给 spawn/io/policy 这类执行器自身失败。
+
+长任务使用 `CmdSessionManager` 管理。它负责启动命令、返回 session id/pid、查询是否仍在运行、以及停止进程。session 是 executor 内部运行态，不承担 agent capsule 写入；agent 项目可以把 `CmdOutput` 或 `CmdSessionStatus` 映射成自己的 capsule 数据。
+
+安全策略目前在 `CommandPolicy` 里提供最小入口，包括是否允许 shell、是否允许后台任务、以及最大 timeout。更高层的 allowlist、cwd 限制、环境变量过滤等策略以后应该继续扩展在 policy 层，而不是混进 process runner。
+
 ## 当前阶段
 
 这个项目目前处在第一个执行器阶段。
@@ -83,8 +105,6 @@ CLI executor 提供两种命令模式：
 
 后续重要工作：
 
-- 引入和 agent action protocol 对齐的 typed request/result
-- 把 timeout 和 non-zero exit 表达为结构化执行结果
-- 设计长任务 session 的启动、查询和停止
+- 和 agent action protocol 对齐 typed request/result 命名
 - 设计 executor input/output 如何映射到 capsule
-- 在低层进程 runner 之外增加安全策略
+- 扩展 policy 层，加入 cwd/env/command allowlist 等更细粒度限制

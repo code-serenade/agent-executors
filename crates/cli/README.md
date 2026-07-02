@@ -6,6 +6,9 @@ Small Rust executor primitives for running local commands and shell scripts.
 
 - Run commands with args, cwd, env, stdin, timeout, and output capture.
 - Run shell commands when shell syntax is needed.
+- Return structured command status for success, non-zero exits, timeout, and background start.
+- Manage long-running command sessions with start, status, and stop operations.
+- Apply a small command policy before execution.
 - Keep command execution behind a small Rust API that agents can call later.
 
 ## Install
@@ -32,6 +35,7 @@ let output = CmdTool::run(CmdRequest {
 })?;
 
 assert_eq!(output.stdout.trim(), "hello");
+assert_eq!(output.status, agent_executor_cli::CmdStatus::Success);
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
@@ -39,4 +43,5 @@ assert_eq!(output.stdout.trim(), "hello");
 
 - `run_shell` passes the command string to the system shell. Do not use it with untrusted input.
 - Command output is collected into memory.
-- Timeout kills the direct child process only; shell child processes may need stronger process-group handling in production.
+- Timeout returns `CmdStatus::TimedOut` after killing the direct child process.
+- Shell child processes may need stronger process-group handling in production.
