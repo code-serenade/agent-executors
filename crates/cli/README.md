@@ -23,7 +23,7 @@ agent-executor-cli = "0.1.0"
 ## Run a Command
 
 ```rust
-use agent_executor_cli::{CliExecutionRequest, CommandRequest, CliExecutor};
+use agent_executor_cli::{CliExecutionRequest, CliExecutor, CommandRequest, Executor};
 
 async fn run() -> agent_executor_cli::Result<()> {
     let output = CliExecutor::default().execute(CliExecutionRequest::Command(CommandRequest {

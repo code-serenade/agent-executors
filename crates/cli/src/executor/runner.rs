@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use agent_executor_core::Result;
+use agent_executor_core::{Executor, Result};
 use tokio::process::Command;
 
 use super::{
@@ -23,9 +23,14 @@ impl CliExecutor {
     pub fn new(policy: CommandPolicy) -> Self {
         Self { policy }
     }
+}
 
-    pub async fn execute(&self, req: CliExecutionRequest) -> Result<CliExecutionResult> {
-        match req {
+impl Executor for CliExecutor {
+    type Request = CliExecutionRequest;
+    type Output = CliExecutionResult;
+
+    async fn execute(&self, request: Self::Request) -> Result<Self::Output> {
+        match request {
             CliExecutionRequest::Command(req) => self.run(req).await,
             CliExecutionRequest::Shell(req) => self.run_shell(req).await,
         }

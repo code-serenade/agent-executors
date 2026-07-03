@@ -95,7 +95,7 @@ agent-executor = { version = "0.1.0", features = ["cli"] }
 然后使用：
 
 ```rust
-use agent_executor::{cli::CliExecutor, Result};
+use agent_executor::{cli::CliExecutor, Executor, Result};
 ```
 
 各 executor crate 仍然保持独立发布和独立使用能力。如果外部只想要最小 CLI 依赖，也可以直接依赖 `agent-executor-cli`。
@@ -137,7 +137,7 @@ one-shot 执行结果使用结构化状态表达：
 
 `fail_on_non_zero` 只决定非 0 退出码是否升级成 `Error`；即使不升级，调用方仍然可以从 `ExecutionOutput.status` 读到 `Failed(code)`。timeout 不再作为普通执行失败抛出，而是返回 `TimedOut` 状态，真正的 `Error` 留给 spawn/io/policy 这类执行器自身失败。
 
-当前 public API 只保留一个执行入口：`CliExecutor::execute(...).await`。长任务 session 暂时不进入 public API；如果后续要支持可观察长任务，应该先设计统一的 session request/result，再决定是否增加第二条清晰边界，而不是把多个零散方法直接暴露出去。
+当前 public API 只保留一个执行入口：`Executor::execute(...).await`。具体 executor 不重复定义同名 public 方法，调用方把 `Executor` trait 引入作用域后用 `.execute(...)`。长任务 session 暂时不进入 public API；如果后续要支持可观察长任务，应该先设计统一的 session request/result，再决定是否增加第二条清晰边界，而不是把多个零散方法直接暴露出去。
 
 安全策略在 `CommandPolicy` 里提供统一入口，包括是否允许 shell、是否允许后台任务、最大 timeout、可执行程序 allowlist、cwd root allowlist、以及请求级 env var allowlist。以后继续扩展更细粒度限制时，应该放在 policy 层，而不是混进 process runner。
 

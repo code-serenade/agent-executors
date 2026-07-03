@@ -1,4 +1,4 @@
-pub use agent_executor_core::{Error, Result};
+pub use agent_executor_core::{Error, Executor, Result};
 
 #[cfg(feature = "cli")]
 pub mod cli {

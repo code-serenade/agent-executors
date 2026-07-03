@@ -107,7 +107,7 @@ cargo fmt --all && cargo test --workspace
 - `ShellRequest`
 - `ExecutionStdin`
 - `ExecutionOutput`
-- `CliExecutor::execute(...).await`
+- `Executor::execute(...).await`
 - `CliExecutor`
 - `CommandPolicy`
 - `CliExecutionRequest`
@@ -229,7 +229,7 @@ one-shot 执行结果已经包含：
 
 当前 public API 只保留：
 
-- `CliExecutor::execute(CliExecutionRequest).await`
+- `Executor::execute(CliExecutionRequest).await`
 
 长任务需要重新设计一套统一 request/result 边界，不应该把 `start/status/output/stop` 这类零散方法直接暴露成主 API。
 
@@ -329,7 +329,7 @@ agent-executor = { version = "0.1.0", features = ["cli"] }
 ```
 
 ```rust
-use agent_executor::{cli::CliExecutor, Result};
+use agent_executor::{cli::CliExecutor, Executor, Result};
 ```
 
 这样外部用户未来可以只依赖一个 crate，同时按 feature 选择启用 CLI、browser、file 等 executor。

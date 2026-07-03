@@ -11,7 +11,7 @@ agent-executor = { version = "0.1.0", features = ["cli"] }
 ```
 
 ```rust
-use agent_executor::{cli::{CliExecutionRequest, CliExecutor, CommandRequest}, Result};
+use agent_executor::{cli::{CliExecutionRequest, CliExecutor, CommandRequest}, Executor, Result};
 
 async fn run() -> Result<()> {
     let output = CliExecutor::default().execute(CliExecutionRequest::Command(CommandRequest {

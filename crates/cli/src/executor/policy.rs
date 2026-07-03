@@ -1,6 +1,5 @@
 use std::{
     collections::{HashMap, HashSet},
-    io,
     path::{Path, PathBuf},
 };
 
@@ -149,8 +148,5 @@ fn canonicalize_policy_path(path: impl AsRef<Path>) -> Result<PathBuf> {
 }
 
 fn policy_error(message: impl Into<String>) -> Error {
-    Error::tool_io(io::Error::new(
-        io::ErrorKind::PermissionDenied,
-        message.into(),
-    ))
+    Error::tool_policy(message)
 }

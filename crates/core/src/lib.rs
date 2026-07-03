@@ -1,3 +1,5 @@
 pub mod error;
+pub mod executor;
 
-pub use error::{Error, Result};
+pub use error::{Error, ErrorCategory, Result};
+pub use executor::Executor;

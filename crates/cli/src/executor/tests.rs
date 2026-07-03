@@ -1,5 +1,6 @@
 use std::{collections::HashSet, io::Write};
 
+use agent_executor_core::{ErrorCategory, Executor};
 use tempfile::NamedTempFile;
 
 use super::*;
@@ -43,6 +44,38 @@ async fn unified_execute_runs_command_requests() {
         }))
         .await
         .unwrap();
+
+    assert_eq!(output.status, ExecutionStatus::Success);
+    assert_eq!(output.stdout.trim(), "hello");
+}
+
+#[tokio::test]
+async fn cli_executor_implements_core_executor_trait() {
+    async fn run_with_trait<E>(
+        executor: &E,
+        request: E::Request,
+    ) -> agent_executor_core::Result<E::Output>
+    where
+        E: Executor,
+    {
+        executor.execute(request).await
+    }
+
+    let output = run_with_trait(
+        &CliExecutor::default(),
+        CliExecutionRequest::Command(CommandRequest {
+            program: "echo".to_string(),
+            args: vec!["hello".to_string()],
+            cwd: None,
+            env: None,
+            timeout_ms: None,
+            fail_on_non_zero: false,
+            stdin: None,
+            background: false,
+        }),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(output.status, ExecutionStatus::Success);
     assert_eq!(output.stdout.trim(), "hello");
@@ -189,7 +222,8 @@ async fn policy_can_reject_shell_and_large_timeout() {
             background: false,
         }))
         .await;
-    assert!(shell_result.is_err());
+    let shell_error = shell_result.unwrap_err();
+    assert_eq!(shell_error.category(), ErrorCategory::Policy);
 
     let bounded = CliExecutor::new(CommandPolicy {
         max_timeout_ms: Some(10),
@@ -207,7 +241,8 @@ async fn policy_can_reject_shell_and_large_timeout() {
             background: false,
         }))
         .await;
-    assert!(timeout_result.is_err());
+    let timeout_error = timeout_result.unwrap_err();
+    assert_eq!(timeout_error.category(), ErrorCategory::Policy);
 }
 
 #[tokio::test]
