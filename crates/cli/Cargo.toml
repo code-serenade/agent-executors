@@ -17,7 +17,7 @@ include.workspace = true
 [dependencies]
 agent-executor-core.workspace = true
 libc.workspace = true
-wait-timeout.workspace = true
+tokio = { workspace = true, features = ["io-util", "macros", "process", "rt", "time"] }
 
 [dev-dependencies]
 tempfile.workspace = true

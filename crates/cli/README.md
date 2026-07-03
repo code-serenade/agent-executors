@@ -11,7 +11,7 @@ Small Rust executor primitives for running local commands and shell scripts.
 - Apply command policy checks before execution.
 - Limit captured output and mark truncated stdout/stderr.
 - Measure command duration.
-- Keep command execution behind a small Rust API that agents can call later.
+- Keep command execution behind one async Rust API that agent actions can await.
 
 ## Install
 
@@ -25,21 +25,23 @@ agent-executor-cli = "0.1.0"
 ```rust
 use agent_executor_cli::{CliExecutionRequest, CommandRequest, CliExecutor};
 
-let output = CliExecutor::default().execute(CliExecutionRequest::Command(CommandRequest {
-    program: "echo".to_string(),
-    args: vec!["hello".to_string()],
-    cwd: None,
-    env: None,
-    timeout_ms: Some(1_000),
-    fail_on_non_zero: true,
-    stdin: None,
-    background: false,
-}))?;
+async fn run() -> agent_executor_cli::Result<()> {
+    let output = CliExecutor::default().execute(CliExecutionRequest::Command(CommandRequest {
+        program: "echo".to_string(),
+        args: vec!["hello".to_string()],
+        cwd: None,
+        env: None,
+        timeout_ms: Some(1_000),
+        fail_on_non_zero: true,
+        stdin: None,
+        background: false,
+    })).await?;
 
-assert_eq!(output.stdout.trim(), "hello");
-assert_eq!(output.status, agent_executor_cli::ExecutionStatus::Success);
-assert!(!output.stdout_truncated);
-# Ok::<(), Box<dyn std::error::Error>>(())
+    assert_eq!(output.stdout.trim(), "hello");
+    assert_eq!(output.status, agent_executor_cli::ExecutionStatus::Success);
+    assert!(!output.stdout_truncated);
+    Ok(())
+}
 ```
 
 ## Notes

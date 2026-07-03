@@ -1,4 +1,4 @@
-use std::process::Command;
+use tokio::process::Command;
 
 use super::types::ShellKind;
 

@@ -101,13 +101,13 @@ cargo fmt --all && cargo test --workspace
 
 ## 当前已经具备的能力
 
-当前 `agent-executor-cli` 已经有一个可用的最小 runner：
+当前 `agent-executor-cli` 已经有一个可用的 async one-shot executor：
 
 - `CommandRequest`
 - `ShellRequest`
 - `ExecutionStdin`
 - `ExecutionOutput`
-- `CliExecutor::execute`
+- `CliExecutor::execute(...).await`
 - `CliExecutor`
 - `CommandPolicy`
 - `CliExecutionRequest`
@@ -214,7 +214,7 @@ exit_code != 0 -> ExecutionOutput { status: Failed(code), stderr, stdout }
 
 ### 5. 已有 duration_ms，暂时没有 started/finished 时间戳
 
-同步执行结果已经包含：
+one-shot 执行结果已经包含：
 
 - duration_ms
 
@@ -229,7 +229,7 @@ exit_code != 0 -> ExecutionOutput { status: Failed(code), stderr, stdout }
 
 当前 public API 只保留：
 
-- `CliExecutor::execute(CliExecutionRequest)`
+- `CliExecutor::execute(CliExecutionRequest).await`
 
 长任务需要重新设计一套统一 request/result 边界，不应该把 `start/status/output/stop` 这类零散方法直接暴露成主 API。
 

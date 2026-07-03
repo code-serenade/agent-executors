@@ -4,8 +4,8 @@ use tempfile::NamedTempFile;
 
 use super::*;
 
-#[test]
-fn command_success_returns_structured_success() {
+#[tokio::test]
+async fn command_success_returns_structured_success() {
     let output = CliExecutor::default()
         .execute(CliExecutionRequest::Command(CommandRequest {
             program: "echo".to_string(),
@@ -17,6 +17,7 @@ fn command_success_returns_structured_success() {
             stdin: None,
             background: false,
         }))
+        .await
         .unwrap();
 
     assert_eq!(output.exit_code, 0);
@@ -27,8 +28,8 @@ fn command_success_returns_structured_success() {
     assert!(output.pid.is_none());
 }
 
-#[test]
-fn unified_execute_runs_command_requests() {
+#[tokio::test]
+async fn unified_execute_runs_command_requests() {
     let output = CliExecutor::default()
         .execute(CliExecutionRequest::Command(CommandRequest {
             program: "echo".to_string(),
@@ -40,14 +41,15 @@ fn unified_execute_runs_command_requests() {
             stdin: None,
             background: false,
         }))
+        .await
         .unwrap();
 
     assert_eq!(output.status, ExecutionStatus::Success);
     assert_eq!(output.stdout.trim(), "hello");
 }
 
-#[test]
-fn shell_command_supports_shell_syntax() {
+#[tokio::test]
+async fn shell_command_supports_shell_syntax() {
     let command = if cfg!(target_os = "windows") {
         "echo hello pipe | findstr pipe"
     } else {
@@ -65,14 +67,15 @@ fn shell_command_supports_shell_syntax() {
             stdin: None,
             background: false,
         }))
+        .await
         .unwrap();
 
     assert_eq!(output.status, ExecutionStatus::Success);
     assert!(output.stdout.contains("hello pipe"));
 }
 
-#[test]
-fn timeout_is_structured_output() {
+#[tokio::test]
+async fn timeout_is_structured_output() {
     let output = CliExecutor::default()
         .execute(CliExecutionRequest::Command(CommandRequest {
             program: "sleep".to_string(),
@@ -84,6 +87,7 @@ fn timeout_is_structured_output() {
             stdin: None,
             background: false,
         }))
+        .await
         .unwrap();
 
     assert_eq!(output.status, ExecutionStatus::TimedOut);
@@ -91,8 +95,8 @@ fn timeout_is_structured_output() {
     assert!(output.duration_ms >= 50);
 }
 
-#[test]
-fn non_zero_exit_can_be_observed_without_error() {
+#[tokio::test]
+async fn non_zero_exit_can_be_observed_without_error() {
     let output = CliExecutor::default()
         .execute(CliExecutionRequest::Shell(ShellRequest {
             command: exit_command(9),
@@ -104,35 +108,39 @@ fn non_zero_exit_can_be_observed_without_error() {
             stdin: None,
             background: false,
         }))
+        .await
         .unwrap();
 
     assert_eq!(output.exit_code, 9);
     assert_eq!(output.status, ExecutionStatus::Failed(9));
 }
 
-#[test]
-fn non_zero_exit_can_fail() {
-    let result = CliExecutor::default().execute(CliExecutionRequest::Shell(ShellRequest {
-        command: exit_command(7),
-        shell: ShellKind::default(),
-        cwd: None,
-        env: None,
-        timeout_ms: None,
-        fail_on_non_zero: true,
-        stdin: None,
-        background: false,
-    }));
+#[tokio::test]
+async fn non_zero_exit_can_fail() {
+    let result = CliExecutor::default()
+        .execute(CliExecutionRequest::Shell(ShellRequest {
+            command: exit_command(7),
+            shell: ShellKind::default(),
+            cwd: None,
+            env: None,
+            timeout_ms: None,
+            fail_on_non_zero: true,
+            stdin: None,
+            background: false,
+        }))
+        .await;
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("exit code 7"));
 }
 
-#[test]
-fn stdin_text_bytes_file_and_null_are_supported() {
+#[tokio::test]
+async fn stdin_text_bytes_file_and_null_are_supported() {
     let text = CliExecutor::default()
         .execute(CliExecutionRequest::Command(cat_request(Some(
             ExecutionStdin::Text("hello text".to_string()),
         ))))
+        .await
         .unwrap();
     assert_eq!(text.stdout, "hello text");
 
@@ -140,6 +148,7 @@ fn stdin_text_bytes_file_and_null_are_supported() {
         .execute(CliExecutionRequest::Command(cat_request(Some(
             ExecutionStdin::Bytes(b"hello bytes".to_vec()),
         ))))
+        .await
         .unwrap();
     assert_eq!(bytes.stdout, "hello bytes");
 
@@ -149,6 +158,7 @@ fn stdin_text_bytes_file_and_null_are_supported() {
         .execute(CliExecutionRequest::Command(cat_request(Some(
             ExecutionStdin::File(temp_file.path().to_path_buf()),
         ))))
+        .await
         .unwrap();
     assert_eq!(file.stdout, "hello file");
 
@@ -156,47 +166,52 @@ fn stdin_text_bytes_file_and_null_are_supported() {
         .execute(CliExecutionRequest::Command(cat_request(Some(
             ExecutionStdin::Null,
         ))))
+        .await
         .unwrap();
     assert!(null.stdout.is_empty());
 }
 
-#[test]
-fn policy_can_reject_shell_and_large_timeout() {
+#[tokio::test]
+async fn policy_can_reject_shell_and_large_timeout() {
     let no_shell = CliExecutor::new(CommandPolicy {
         allow_shell: false,
         ..CommandPolicy::default()
     });
-    let shell_result = no_shell.execute(CliExecutionRequest::Shell(ShellRequest {
-        command: "echo nope".to_string(),
-        shell: ShellKind::default(),
-        cwd: None,
-        env: None,
-        timeout_ms: None,
-        fail_on_non_zero: false,
-        stdin: None,
-        background: false,
-    }));
+    let shell_result = no_shell
+        .execute(CliExecutionRequest::Shell(ShellRequest {
+            command: "echo nope".to_string(),
+            shell: ShellKind::default(),
+            cwd: None,
+            env: None,
+            timeout_ms: None,
+            fail_on_non_zero: false,
+            stdin: None,
+            background: false,
+        }))
+        .await;
     assert!(shell_result.is_err());
 
     let bounded = CliExecutor::new(CommandPolicy {
         max_timeout_ms: Some(10),
         ..CommandPolicy::default()
     });
-    let timeout_result = bounded.execute(CliExecutionRequest::Command(CommandRequest {
-        program: "echo".to_string(),
-        args: vec!["hello".to_string()],
-        cwd: None,
-        env: None,
-        timeout_ms: Some(20),
-        fail_on_non_zero: false,
-        stdin: None,
-        background: false,
-    }));
+    let timeout_result = bounded
+        .execute(CliExecutionRequest::Command(CommandRequest {
+            program: "echo".to_string(),
+            args: vec!["hello".to_string()],
+            cwd: None,
+            env: None,
+            timeout_ms: Some(20),
+            fail_on_non_zero: false,
+            stdin: None,
+            background: false,
+        }))
+        .await;
     assert!(timeout_result.is_err());
 }
 
-#[test]
-fn policy_can_restrict_program_cwd_and_env() {
+#[tokio::test]
+async fn policy_can_restrict_program_cwd_and_env() {
     let temp_dir = tempfile::tempdir().unwrap();
     let runner = CliExecutor::new(CommandPolicy {
         allowed_programs: Some(HashSet::from(["echo".to_string()])),
@@ -205,51 +220,57 @@ fn policy_can_restrict_program_cwd_and_env() {
         ..CommandPolicy::default()
     });
 
-    let allowed = runner.execute(CliExecutionRequest::Command(CommandRequest {
-        program: "echo".to_string(),
-        args: vec!["hello".to_string()],
-        cwd: Some(temp_dir.path().display().to_string()),
-        env: Some(std::collections::HashMap::from([(
-            "SAFE_ENV".to_string(),
-            "1".to_string(),
-        )])),
-        timeout_ms: None,
-        fail_on_non_zero: false,
-        stdin: None,
-        background: false,
-    }));
+    let allowed = runner
+        .execute(CliExecutionRequest::Command(CommandRequest {
+            program: "echo".to_string(),
+            args: vec!["hello".to_string()],
+            cwd: Some(temp_dir.path().display().to_string()),
+            env: Some(std::collections::HashMap::from([(
+                "SAFE_ENV".to_string(),
+                "1".to_string(),
+            )])),
+            timeout_ms: None,
+            fail_on_non_zero: false,
+            stdin: None,
+            background: false,
+        }))
+        .await;
     assert!(allowed.is_ok());
 
-    let blocked_program = runner.execute(CliExecutionRequest::Command(CommandRequest {
-        program: "cat".to_string(),
-        args: vec![],
-        cwd: Some(temp_dir.path().display().to_string()),
-        env: None,
-        timeout_ms: None,
-        fail_on_non_zero: false,
-        stdin: Some(ExecutionStdin::Null),
-        background: false,
-    }));
+    let blocked_program = runner
+        .execute(CliExecutionRequest::Command(CommandRequest {
+            program: "cat".to_string(),
+            args: vec![],
+            cwd: Some(temp_dir.path().display().to_string()),
+            env: None,
+            timeout_ms: None,
+            fail_on_non_zero: false,
+            stdin: Some(ExecutionStdin::Null),
+            background: false,
+        }))
+        .await;
     assert!(blocked_program.is_err());
 
-    let blocked_env = runner.execute(CliExecutionRequest::Command(CommandRequest {
-        program: "echo".to_string(),
-        args: vec!["hello".to_string()],
-        cwd: Some(temp_dir.path().display().to_string()),
-        env: Some(std::collections::HashMap::from([(
-            "UNSAFE_ENV".to_string(),
-            "1".to_string(),
-        )])),
-        timeout_ms: None,
-        fail_on_non_zero: false,
-        stdin: None,
-        background: false,
-    }));
+    let blocked_env = runner
+        .execute(CliExecutionRequest::Command(CommandRequest {
+            program: "echo".to_string(),
+            args: vec!["hello".to_string()],
+            cwd: Some(temp_dir.path().display().to_string()),
+            env: Some(std::collections::HashMap::from([(
+                "UNSAFE_ENV".to_string(),
+                "1".to_string(),
+            )])),
+            timeout_ms: None,
+            fail_on_non_zero: false,
+            stdin: None,
+            background: false,
+        }))
+        .await;
     assert!(blocked_env.is_err());
 }
 
-#[test]
-fn policy_can_limit_captured_output_size() {
+#[tokio::test]
+async fn policy_can_limit_captured_output_size() {
     let runner = CliExecutor::new(CommandPolicy {
         max_output_bytes: Some(5),
         ..CommandPolicy::default()
@@ -266,6 +287,7 @@ fn policy_can_limit_captured_output_size() {
             stdin: None,
             background: false,
         }))
+        .await
         .unwrap();
 
     assert_eq!(output.stdout, "12345");
@@ -274,8 +296,8 @@ fn policy_can_limit_captured_output_size() {
 }
 
 #[cfg(not(target_os = "windows"))]
-#[test]
-fn shell_request_can_choose_zsh() {
+#[tokio::test]
+async fn shell_request_can_choose_zsh() {
     if std::process::Command::new("zsh")
         .arg("-c")
         .arg("true")
@@ -289,6 +311,7 @@ fn shell_request_can_choose_zsh() {
         .execute(CliExecutionRequest::Shell(
             ShellRequest::new("echo $ZSH_VERSION").with_shell(ShellKind::Zsh),
         ))
+        .await
         .unwrap();
 
     assert_eq!(output.status, ExecutionStatus::Success);
@@ -296,8 +319,8 @@ fn shell_request_can_choose_zsh() {
 }
 
 #[cfg(not(target_os = "windows"))]
-#[test]
-fn non_utf8_stdout_is_preserved_lossily() {
+#[tokio::test]
+async fn non_utf8_stdout_is_preserved_lossily() {
     let output = CliExecutor::default()
         .execute(CliExecutionRequest::Shell(ShellRequest {
             command: "printf '\\377\\376abc'".to_string(),
@@ -309,6 +332,7 @@ fn non_utf8_stdout_is_preserved_lossily() {
             stdin: None,
             background: false,
         }))
+        .await
         .unwrap();
 
     assert!(output.stdout.contains("abc"));

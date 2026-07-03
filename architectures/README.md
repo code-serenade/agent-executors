@@ -128,7 +128,7 @@ CLI crate 内部按层组织：
 - `shell`：平台相关 shell 命令构造
 - `policy`：低层执行安全策略入口
 
-同步执行结果使用结构化状态表达：
+one-shot 执行结果使用结构化状态表达：
 
 - `Success`：命令退出码为 0
 - `Failed(code)`：命令已经结束，但退出码非 0
@@ -137,7 +137,7 @@ CLI crate 内部按层组织：
 
 `fail_on_non_zero` 只决定非 0 退出码是否升级成 `Error`；即使不升级，调用方仍然可以从 `ExecutionOutput.status` 读到 `Failed(code)`。timeout 不再作为普通执行失败抛出，而是返回 `TimedOut` 状态，真正的 `Error` 留给 spawn/io/policy 这类执行器自身失败。
 
-当前 public API 只保留一个执行入口：`CliExecutor::execute`。长任务 session 暂时不进入 public API；如果后续要支持可观察长任务，应该先设计统一的 session request/result，再决定是否增加第二条清晰边界，而不是把多个零散方法直接暴露出去。
+当前 public API 只保留一个执行入口：`CliExecutor::execute(...).await`。长任务 session 暂时不进入 public API；如果后续要支持可观察长任务，应该先设计统一的 session request/result，再决定是否增加第二条清晰边界，而不是把多个零散方法直接暴露出去。
 
 安全策略在 `CommandPolicy` 里提供统一入口，包括是否允许 shell、是否允许后台任务、最大 timeout、可执行程序 allowlist、cwd root allowlist、以及请求级 env var allowlist。以后继续扩展更细粒度限制时，应该放在 policy 层，而不是混进 process runner。
 

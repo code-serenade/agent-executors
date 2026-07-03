@@ -27,4 +27,4 @@ agent-executor-cli = { path = "crates/cli" }
 libc = "0.2"
 tempfile = "3"
 thiserror = "2"
-wait-timeout = "0.2"
+tokio = "1"
