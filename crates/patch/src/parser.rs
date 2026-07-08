@@ -15,6 +15,7 @@ pub(crate) enum PatchOperation {
     },
     Update {
         path: PathBuf,
+        move_path: Option<PathBuf>,
         hunks: Vec<UpdateHunk>,
     },
     Delete {
@@ -92,6 +93,7 @@ impl Parser<'_> {
     }
 
     fn parse_update(&mut self, path: String) -> Result<PatchOperation> {
+        let move_path = self.take_prefixed("*** Move to: ").map(PathBuf::from);
         let mut hunks = Vec::new();
         while !self.peek_starts_operation() && !self.peek_is("*** End Patch") {
             self.expect_hunk_header()?;
@@ -137,6 +139,7 @@ impl Parser<'_> {
 
         Ok(PatchOperation::Update {
             path: PathBuf::from(path),
+            move_path,
             hunks,
         })
     }

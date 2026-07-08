@@ -9,7 +9,9 @@ use agent_executor_core::{Error, Executor, Result};
 use crate::{
     parser::{PatchAction, PatchOperation, UpdateHunk, parse_patch},
     policy::PatchPolicy,
-    types::{PatchExecutionRequest, PatchExecutionResult, PatchFileChange, PatchStatus},
+    types::{
+        PatchExecutionRequest, PatchExecutionResult, PatchFileChange, PatchPreview, PatchStatus,
+    },
 };
 
 #[derive(Debug, Clone, Default)]
@@ -32,25 +34,41 @@ impl Executor for PatchExecutor {
         self.policy
             .validate_request(&request.patch, request.cwd.as_path())?;
 
-        let action = parse_patch(&request.patch)?;
+        let action = match parse_patch(&request.patch) {
+            Ok(action) => action,
+            Err(err) => {
+                return Ok(rejected_result(
+                    started_at,
+                    Vec::new(),
+                    vec![err.to_string()],
+                ));
+            }
+        };
         self.policy.validate_action(&action)?;
         validate_paths(&request.cwd, &action)?;
 
         let changed_files = changed_files_for_action(&action);
+        let preview = match preview_action(&request.cwd, &action) {
+            Ok(preview) => preview,
+            Err(message) => {
+                return Ok(rejected_result(started_at, changed_files, vec![message]));
+            }
+        };
         if request.dry_run {
-            validate_apply_action(&request.cwd, &action)?;
             return Ok(PatchExecutionResult {
                 status: PatchStatus::DryRun,
                 changed_files,
+                preview,
                 diagnostics: Vec::new(),
                 duration_ms: started_at.elapsed().as_millis(),
             });
         }
 
-        apply_action(&request.cwd, &action)?;
+        apply_preview(&request.cwd, &preview)?;
         Ok(PatchExecutionResult {
             status: PatchStatus::Applied,
             changed_files,
+            preview,
             diagnostics: Vec::new(),
             duration_ms: started_at.elapsed().as_millis(),
         })
@@ -65,6 +83,13 @@ fn validate_paths(cwd: &Path, action: &PatchAction) -> Result<()> {
             | PatchOperation::Delete { path } => path,
         };
         resolve_patch_path(cwd, path)?;
+        if let PatchOperation::Update {
+            move_path: Some(move_path),
+            ..
+        } = op
+        {
+            resolve_patch_path(cwd, move_path)?;
+        }
     }
     Ok(())
 }
@@ -75,58 +100,136 @@ fn changed_files_for_action(action: &PatchAction) -> Vec<PatchFileChange> {
         .iter()
         .map(|op| match op {
             PatchOperation::Add { path, .. } => PatchFileChange::Add { path: path.clone() },
-            PatchOperation::Update { path, .. } => PatchFileChange::Update { path: path.clone() },
+            PatchOperation::Update {
+                path, move_path, ..
+            } => PatchFileChange::Update {
+                path: path.clone(),
+                move_path: move_path.clone(),
+            },
             PatchOperation::Delete { path } => PatchFileChange::Delete { path: path.clone() },
         })
         .collect()
 }
 
-fn apply_action(cwd: &Path, action: &PatchAction) -> Result<()> {
+fn preview_action(
+    cwd: &Path,
+    action: &PatchAction,
+) -> std::result::Result<Vec<PatchPreview>, String> {
+    let mut preview = Vec::new();
     for op in &action.operations {
         match op {
             PatchOperation::Add { path, lines } => {
-                let path = resolve_patch_path(cwd, path)?;
-                validate_add_target(&path)?;
-                if let Some(parent) = path.parent() {
-                    fs::create_dir_all(parent).map_err(Error::tool_io)?;
-                }
-                fs::write(path, lines_to_text(lines)).map_err(Error::tool_io)?;
+                let path = resolve_patch_path_for_preview(cwd, path)?;
+                validate_add_target(&path).map_err(|err| err.to_string())?;
+                preview.push(PatchPreview::Add {
+                    path: path
+                        .strip_prefix(cwd)
+                        .unwrap_or(path.as_path())
+                        .to_path_buf(),
+                    content: lines_to_text(lines),
+                });
             }
-            PatchOperation::Update { path, hunks } => {
-                let path = resolve_patch_path(cwd, path)?;
-                let original = fs::read_to_string(&path).map_err(Error::tool_io)?;
+            PatchOperation::Update {
+                path,
+                move_path,
+                hunks,
+            } => {
+                let path = resolve_patch_path_for_preview(cwd, path)?;
+                let original = fs::read_to_string(&path)
+                    .map_err(|err| format!("cannot update `{}`: {err}", path.display()))?;
                 let updated = apply_hunks(&original, hunks)?;
-                fs::write(path, updated).map_err(Error::tool_io)?;
+                let move_path = match move_path {
+                    Some(move_path) => {
+                        let target = resolve_patch_path_for_preview(cwd, move_path)?;
+                        if target != path && target.exists() {
+                            return Err(format!(
+                                "cannot move `{}` to `{}` because target already exists",
+                                path.display(),
+                                target.display()
+                            ));
+                        }
+                        Some(
+                            target
+                                .strip_prefix(cwd)
+                                .unwrap_or(target.as_path())
+                                .to_path_buf(),
+                        )
+                    }
+                    None => None,
+                };
+                preview.push(PatchPreview::Update {
+                    path: path
+                        .strip_prefix(cwd)
+                        .unwrap_or(path.as_path())
+                        .to_path_buf(),
+                    move_path,
+                    unified_diff: unified_diff_for_update(
+                        path.strip_prefix(cwd).unwrap_or(path.as_path()),
+                        &original,
+                        &updated,
+                    ),
+                    before: original,
+                    after: updated,
+                });
             }
             PatchOperation::Delete { path } => {
-                let path = resolve_patch_path(cwd, path)?;
-                fs::remove_file(path).map_err(Error::tool_io)?;
+                let path = resolve_patch_path_for_preview(cwd, path)?;
+                let content = fs::read_to_string(&path)
+                    .map_err(|err| format!("cannot delete `{}`: {err}", path.display()))?;
+                preview.push(PatchPreview::Delete {
+                    path: path
+                        .strip_prefix(cwd)
+                        .unwrap_or(path.as_path())
+                        .to_path_buf(),
+                    content,
+                });
             }
         }
     }
-    Ok(())
+    Ok(preview)
 }
 
-fn validate_apply_action(cwd: &Path, action: &PatchAction) -> Result<()> {
-    for op in &action.operations {
-        match op {
-            PatchOperation::Add { path, .. } => {
+fn apply_preview(cwd: &Path, preview: &[PatchPreview]) -> Result<()> {
+    for change in preview {
+        match change {
+            PatchPreview::Add { path, content } => {
                 let path = resolve_patch_path(cwd, path)?;
-                validate_add_target(&path)?;
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent).map_err(Error::tool_io)?;
+                }
+                fs::write(path, content).map_err(Error::tool_io)?;
             }
-            PatchOperation::Update { path, hunks } => {
+            PatchPreview::Update {
+                path,
+                move_path,
+                after,
+                ..
+            } => {
                 let path = resolve_patch_path(cwd, path)?;
-                let original = fs::read_to_string(path).map_err(Error::tool_io)?;
-                apply_hunks(&original, hunks)?;
+                let target = match move_path {
+                    Some(move_path) => resolve_patch_path(cwd, move_path)?,
+                    None => path.clone(),
+                };
+                if let Some(parent) = target.parent() {
+                    fs::create_dir_all(parent).map_err(Error::tool_io)?;
+                }
+                fs::write(&target, after).map_err(Error::tool_io)?;
+                if target != path {
+                    fs::remove_file(path).map_err(Error::tool_io)?;
+                }
             }
-            PatchOperation::Delete { path } => {
+            PatchPreview::Delete { path, .. } => {
                 let path = resolve_patch_path(cwd, path)?;
                 if !path.exists() {
-                    return Err(Error::tool_policy(format!(
-                        "cannot delete `{}` because it does not exist",
-                        path.display()
+                    return Err(Error::tool_io(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!(
+                            "cannot delete `{}` because it does not exist",
+                            path.display()
+                        ),
                     )));
                 }
+                fs::remove_file(path).map_err(Error::tool_io)?;
             }
         }
     }
@@ -143,13 +246,13 @@ fn validate_add_target(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn apply_hunks(original: &str, hunks: &[UpdateHunk]) -> Result<String> {
+fn apply_hunks(original: &str, hunks: &[UpdateHunk]) -> std::result::Result<String, String> {
     let mut lines = split_text_lines(original);
     let mut search_start = 0;
 
     for hunk in hunks {
         let Some(index) = find_subsequence(&lines, &hunk.old_lines, search_start) else {
-            return Err(Error::tool_policy("update hunk did not match target file"));
+            return Err("update hunk did not match target file".to_string());
         };
 
         lines.splice(
@@ -160,6 +263,28 @@ fn apply_hunks(original: &str, hunks: &[UpdateHunk]) -> Result<String> {
     }
 
     Ok(lines_to_text(&lines))
+}
+
+fn unified_diff_for_update(path: &Path, before: &str, after: &str) -> String {
+    let mut diff = String::new();
+    diff.push_str("--- ");
+    diff.push_str(&path.display().to_string());
+    diff.push('\n');
+    diff.push_str("+++ ");
+    diff.push_str(&path.display().to_string());
+    diff.push('\n');
+    diff.push_str("@@\n");
+    for line in split_text_lines(before) {
+        diff.push('-');
+        diff.push_str(&line);
+        diff.push('\n');
+    }
+    for line in split_text_lines(after) {
+        diff.push('+');
+        diff.push_str(&line);
+        diff.push('\n');
+    }
+    diff
 }
 
 fn find_subsequence(haystack: &[String], needle: &[String], start: usize) -> Option<usize> {
@@ -204,6 +329,24 @@ fn resolve_patch_path(cwd: &Path, path: &Path) -> Result<PathBuf> {
     }
 
     Ok(cwd.join(path))
+}
+
+fn resolve_patch_path_for_preview(cwd: &Path, path: &Path) -> std::result::Result<PathBuf, String> {
+    resolve_patch_path(cwd, path).map_err(|err| err.to_string())
+}
+
+fn rejected_result(
+    started_at: Instant,
+    changed_files: Vec<PatchFileChange>,
+    diagnostics: Vec<String>,
+) -> PatchExecutionResult {
+    PatchExecutionResult {
+        status: PatchStatus::Rejected,
+        changed_files,
+        preview: Vec::new(),
+        diagnostics,
+        duration_ms: started_at.elapsed().as_millis(),
+    }
 }
 
 #[cfg(test)]
@@ -274,7 +417,85 @@ mod tests {
                 path: PathBuf::from("new.txt")
             }]
         );
+        assert_eq!(
+            output.preview,
+            vec![PatchPreview::Add {
+                path: PathBuf::from("new.txt"),
+                content: "new\n".to_string(),
+            }]
+        );
         assert!(!dir.path().join("new.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn rejected_hunk_is_structured_output_without_writing() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("old.txt"), "actual\n").unwrap();
+
+        let output = PatchExecutor::default()
+            .execute(PatchExecutionRequest {
+                cwd: dir.path().to_path_buf(),
+                dry_run: false,
+                patch: r#"*** Begin Patch
+*** Update File: old.txt
+@@
+-expected
++updated
+*** End Patch"#
+                    .to_string(),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(output.status, PatchStatus::Rejected);
+        assert_eq!(
+            output.changed_files,
+            vec![PatchFileChange::Update {
+                path: PathBuf::from("old.txt"),
+                move_path: None,
+            }]
+        );
+        assert!(output.diagnostics[0].contains("hunk"));
+        assert_eq!(
+            fs::read_to_string(dir.path().join("old.txt")).unwrap(),
+            "actual\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn update_can_move_file() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("old.txt"), "old\n").unwrap();
+
+        let output = PatchExecutor::default()
+            .execute(PatchExecutionRequest {
+                cwd: dir.path().to_path_buf(),
+                dry_run: false,
+                patch: r#"*** Begin Patch
+*** Update File: old.txt
+*** Move to: renamed.txt
+@@
+-old
++updated
+*** End Patch"#
+                    .to_string(),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(output.status, PatchStatus::Applied);
+        assert_eq!(
+            output.changed_files,
+            vec![PatchFileChange::Update {
+                path: PathBuf::from("old.txt"),
+                move_path: Some(PathBuf::from("renamed.txt")),
+            }]
+        );
+        assert!(!dir.path().join("old.txt").exists());
+        assert_eq!(
+            fs::read_to_string(dir.path().join("renamed.txt")).unwrap(),
+            "updated\n"
+        );
     }
 
     #[tokio::test]

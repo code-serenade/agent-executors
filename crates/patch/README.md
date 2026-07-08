@@ -6,7 +6,9 @@ Small Rust executor primitives for applying structured file patches.
 
 - Parse Codex-style patch text.
 - Add, update, and delete files under a requested working directory.
-- Support dry-run requests that report changed files without writing.
+- Support update-and-move operations.
+- Support dry-run requests that validate the patch and return previews without writing.
+- Return structured rejection results for parse and hunk-match failures.
 - Apply patch policy checks before touching the filesystem.
 - Keep patch execution behind one async Rust API that agent actions can await.
 
@@ -37,5 +39,6 @@ async fn run() -> agent_executor_patch::Result<()> {
 ## Notes
 
 - Patch paths must be relative and must stay inside `cwd`.
-- Dry-run validates and reports the target file changes, but does not write.
-- Parse, policy, and hunk-match failures are returned as policy errors.
+- Dry-run validates target file state and reports previews, but does not write.
+- Parse and hunk-match failures return `PatchStatus::Rejected`.
+- Policy and filesystem write failures return `Error`.

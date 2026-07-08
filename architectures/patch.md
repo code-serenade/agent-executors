@@ -69,6 +69,7 @@ Executor::execute(PatchExecutionRequest).await
 
 - `status`：`Applied` / `DryRun` / `Rejected`
 - `changed_files`：结构化文件变化列表
+- `preview`：文件修改预览，包括新增内容、删除内容、更新前后文本和 unified diff
 - `diagnostics`：诊断信息
 - `duration_ms`：执行耗时
 
@@ -76,6 +77,7 @@ Executor::execute(PatchExecutionRequest).await
 
 - `*** Add File: path`
 - `*** Update File: path`
+- `*** Move to: path`
 - `*** Delete File: path`
 
 ## Policy
@@ -90,16 +92,46 @@ Executor::execute(PatchExecutionRequest).await
 
 路径必须是相对路径，不能使用绝对路径或 `..` 逃出 `cwd`。这条规则属于 patch executor 的底层安全边界，不应该留给上层 agent 自行保证。
 
+## 执行结果语义
+
+patch executor 和 CLI executor 一样，需要区分“执行结果”和“执行器内部错误”。
+
+结构化结果：
+
+- patch 解析失败
+- hunk 无法匹配目标文件
+- add 目标已经存在
+- delete 目标不存在
+- move 目标已经存在
+
+这些情况会返回：
+
+```text
+Ok(PatchExecutionResult { status = Rejected, diagnostics = ... })
+```
+
+真正的 executor error：
+
+- policy 拒绝
+- cwd root 不允许
+- patch 路径逃逸
+- 文件写入、删除等底层 IO 失败
+
+这些情况会返回：
+
+```text
+Err(Error)
+```
+
 ## 后续缺口
 
-当前 patch executor 是最小可用版本，还不是完整的编辑系统。
+当前 patch executor 是 agent 可接入的第一版，还不是完整的编辑系统。
 
 后续可以继续补：
 
 - 更完整的 hunk 上下文匹配
 - 保留原文件末尾换行状态
-- 文件 move/rename
-- dry-run 返回 preview diff
+- 更紧凑的 preview diff，只返回局部 hunk 而不是整文件前后文本
 - 更细粒度的 per-path 权限策略
 - 应用失败时的部分修改回滚策略
 - 和 agent action protocol 对齐 request/result 命名

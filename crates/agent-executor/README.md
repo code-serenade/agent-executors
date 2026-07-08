@@ -30,7 +30,7 @@ async fn run() -> Result<()> {
 }
 ```
 
-Enable the `patch` feature to apply structured file patches:
+Enable the `patch` feature to validate and apply structured file patches:
 
 ```toml
 [dependencies]
@@ -52,6 +52,7 @@ async fn apply() -> Result<()> {
     }).await?;
 
     assert_eq!(output.status, PatchStatus::Applied);
+    assert_eq!(output.changed_files.len(), 1);
     Ok(())
 }
 ```

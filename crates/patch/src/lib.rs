@@ -6,4 +6,6 @@ mod types;
 pub use agent_executor_core::{Error, Executor, Result};
 pub use executor::PatchExecutor;
 pub use policy::PatchPolicy;
-pub use types::{PatchExecutionRequest, PatchExecutionResult, PatchFileChange, PatchStatus};
+pub use types::{
+    PatchExecutionRequest, PatchExecutionResult, PatchFileChange, PatchPreview, PatchStatus,
+};
