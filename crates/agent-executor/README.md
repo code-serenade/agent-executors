@@ -29,3 +29,29 @@ async fn run() -> Result<()> {
     Ok(())
 }
 ```
+
+Enable the `patch` feature to apply structured file patches:
+
+```toml
+[dependencies]
+agent-executor = { version = "0.1.0", features = ["patch"] }
+```
+
+```rust
+use agent_executor::{
+    patch::{PatchExecutionRequest, PatchExecutor, PatchStatus},
+    Executor,
+    Result,
+};
+
+async fn apply() -> Result<()> {
+    let output = PatchExecutor::default().execute(PatchExecutionRequest {
+        patch: "*** Begin Patch\n*** Add File: hello.txt\n+hello\n*** End Patch".to_string(),
+        cwd: std::env::current_dir().expect("current directory"),
+        dry_run: false,
+    }).await?;
+
+    assert_eq!(output.status, PatchStatus::Applied);
+    Ok(())
+}
+```

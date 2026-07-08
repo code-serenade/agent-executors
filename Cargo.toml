@@ -24,6 +24,7 @@ include = [
 agent-executor = { path = "crates/agent-executor" }
 agent-executor-core = { path = "crates/core" }
 agent-executor-cli = { path = "crates/cli" }
+agent-executor-patch = { path = "crates/patch" }
 libc = "0.2"
 tempfile = "3"
 thiserror = "2"

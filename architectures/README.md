@@ -83,6 +83,7 @@ agent-executors/
 ```
 
 当前对外 facade crate 是 `agent-executor`，基础 crate 是 `agent-executor-core`，第一个执行器 crate 是 `agent-executor-cli`。
+第二个执行器 crate 是 `agent-executor-patch`，用于把结构化 patch 文本应用到文件系统。
 
 `agent-executor-core` 负责放置跨执行器共享的稳定基础类型，比如 workspace 级 `Error` 和 `Result`。具体执行器可以继续隐藏自己的内部错误细节，并通过 core 提供的公共错误入口返回给调用方。
 
@@ -101,6 +102,11 @@ use agent_executor::{cli::CliExecutor, Executor, Result};
 各 executor crate 仍然保持独立发布和独立使用能力。如果外部只想要最小 CLI 依赖，也可以直接依赖 `agent-executor-cli`。
 
 未来如果增加其它执行器，应该继续新增 crate，而不是把 `cli` crate 变成混合工具集合。
+
+当前 workspace 的具体执行器包括：
+
+- `agent-executor-cli`：运行本地命令和 shell 脚本。
+- `agent-executor-patch`：解析、校验并应用结构化文件 patch。
 
 ## CLI Executor 目标
 
@@ -155,3 +161,4 @@ one-shot 执行结果使用结构化状态表达：
 - 设计 executor input/output 如何映射到 capsule
 - 扩展 policy 层，加入命令参数规则、环境继承策略等更细粒度限制
 - 重新设计长任务 session 的统一 request/result 边界
+- 扩展 patch executor，支持更完整的 diff 预览、移动文件、复杂上下文匹配和更细粒度文件权限策略
