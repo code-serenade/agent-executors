@@ -6,6 +6,7 @@ This crate owns common API types that should stay stable across executor crates.
 At the moment that means:
 
 - `Executor`
+- `SessionExecutor`
 - `Error`
 - `ErrorCategory`
 - `Result`

@@ -52,24 +52,26 @@ async fn run() -> agent_executor_cli::Result<()> {
 - On Unix, timeout tries to kill the process group before killing the direct child.
 - On Windows, process cleanup currently targets the direct child.
 - `CliExecutor` is one-shot and always waits for a terminal result.
-- `ProcessBackend` is a lower-level process primitive. It exposes `ProcessControl` and a
-  `ProcessEvent` receiver, but does not own task/session identity, logging retention, or agent routing.
+- `CliProcessExecutor` is a lower-level process primitive. It exposes `CliProcessControl` and a
+  `CliProcessEvent` receiver, but does not own task/session identity, logging retention, or agent routing.
 
 ## Start a Managed Process
 
 ```rust
-use agent_executor_cli::{ProcessBackend, ProcessEvent, ProcessRequest};
+use agent_executor_cli::{
+    CliProcessEvent, CliProcessExecutor, CliProcessRequest, SessionExecutor,
+};
 
 async fn run() -> agent_executor_cli::Result<()> {
-    let mut process = ProcessBackend::default().start(ProcessRequest {
+    let mut process = CliProcessExecutor::default().start(CliProcessRequest {
         program: "sh".to_string(),
         args: vec!["-c".to_string(), "printf ready".to_string()],
         cwd: None,
         env: None,
-    })?;
+    }).await?;
 
     while let Some(event) = process.recv().await {
-        if let ProcessEvent::Exited(exit) = event {
+        if let CliProcessEvent::Exited(exit) = event {
             assert!(exit.exit_code.is_some());
             break;
         }

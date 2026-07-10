@@ -1,6 +1,6 @@
 use std::{collections::HashMap, io, process::ExitStatus, time::Duration};
 
-use agent_executor_core::{Error, Result};
+use agent_executor_core::{Error, Result, SessionExecutor};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
     process::{Child, ChildStdin, Command},
@@ -15,14 +15,14 @@ const EXIT_POLL_INTERVAL: Duration = Duration::from_millis(20);
 
 /// A process request that keeps stdin and both output streams attached.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProcessRequest {
+pub struct CliProcessRequest {
     pub program: String,
     pub args: Vec<String>,
     pub cwd: Option<String>,
     pub env: Option<HashMap<String, String>>,
 }
 
-impl ProcessRequest {
+impl CliProcessRequest {
     pub fn new(program: impl Into<String>) -> Self {
         Self {
             program: program.into(),
@@ -34,30 +34,30 @@ impl ProcessRequest {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProcessStream {
+pub enum CliProcessStream {
     Stdout,
     Stderr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ProcessEvent {
+pub enum CliProcessEvent {
     Output {
-        stream: ProcessStream,
+        stream: CliProcessStream,
         bytes: Vec<u8>,
     },
-    Exited(ProcessExit),
+    Exited(CliProcessExit),
     IoError {
-        stream: Option<ProcessStream>,
+        stream: Option<CliProcessStream>,
         message: String,
     },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ProcessExit {
+pub struct CliProcessExit {
     pub exit_code: Option<i32>,
 }
 
-impl From<ExitStatus> for ProcessExit {
+impl From<ExitStatus> for CliProcessExit {
     fn from(status: ExitStatus) -> Self {
         Self {
             exit_code: status.code(),
@@ -69,10 +69,10 @@ impl From<ExitStatus> for ProcessExit {
 ///
 /// It intentionally has no task, agent, capsule, or session-registry knowledge.
 #[derive(Debug, Clone, Default)]
-pub struct ProcessBackend;
+pub struct CliProcessExecutor;
 
-impl ProcessBackend {
-    pub fn start(&self, request: ProcessRequest) -> Result<StartedProcess> {
+impl CliProcessExecutor {
+    fn start_inner(&self, request: CliProcessRequest) -> Result<CliProcessSession> {
         let runtime = tokio::runtime::Handle::try_current().map_err(|error| {
             Error::tool_io(io::Error::other(format!(
                 "managed process requires a Tokio runtime: {error}"
@@ -93,50 +93,59 @@ impl ProcessBackend {
 
         runtime.spawn(run_process(child, command_rx, event_tx));
 
-        Ok(StartedProcess {
+        Ok(CliProcessSession {
             pid,
-            control: ProcessControl { command_tx },
+            control: CliProcessControl { command_tx },
             event_rx,
         })
     }
 }
 
-pub struct StartedProcess {
-    pid: u32,
-    control: ProcessControl,
-    event_rx: mpsc::UnboundedReceiver<ProcessEvent>,
+impl SessionExecutor for CliProcessExecutor {
+    type Request = CliProcessRequest;
+    type Session = CliProcessSession;
+
+    async fn start(&self, request: Self::Request) -> Result<Self::Session> {
+        self.start_inner(request)
+    }
 }
 
-impl StartedProcess {
+pub struct CliProcessSession {
+    pid: u32,
+    control: CliProcessControl,
+    event_rx: mpsc::UnboundedReceiver<CliProcessEvent>,
+}
+
+impl CliProcessSession {
     pub fn pid(&self) -> u32 {
         self.pid
     }
 
-    pub fn control(&self) -> ProcessControl {
+    pub fn control(&self) -> CliProcessControl {
         self.control.clone()
     }
 
-    pub async fn recv(&mut self) -> Option<ProcessEvent> {
+    pub async fn recv(&mut self) -> Option<CliProcessEvent> {
         self.event_rx.recv().await
     }
 
-    pub fn try_recv(&mut self) -> Option<ProcessEvent> {
+    pub fn try_recv(&mut self) -> Option<CliProcessEvent> {
         self.event_rx.try_recv().ok()
     }
 }
 
 #[derive(Clone)]
-pub struct ProcessControl {
+pub struct CliProcessControl {
     command_tx: mpsc::Sender<ProcessCommand>,
 }
 
-impl std::fmt::Debug for ProcessControl {
+impl std::fmt::Debug for CliProcessControl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ProcessControl").finish_non_exhaustive()
+        f.debug_struct("CliProcessControl").finish_non_exhaustive()
     }
 }
 
-impl ProcessControl {
+impl CliProcessControl {
     pub async fn write_stdin(&self, bytes: impl Into<Vec<u8>>) -> Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.command_tx
@@ -149,7 +158,7 @@ impl ProcessControl {
         reply_rx.await.map_err(closed_process_error)?
     }
 
-    pub async fn stop(&self) -> Result<ProcessExit> {
+    pub async fn stop(&self) -> Result<CliProcessExit> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.command_tx
             .send(ProcessCommand::Stop { reply_tx })
@@ -165,27 +174,27 @@ enum ProcessCommand {
         reply_tx: oneshot::Sender<Result<()>>,
     },
     Stop {
-        reply_tx: oneshot::Sender<Result<ProcessExit>>,
+        reply_tx: oneshot::Sender<Result<CliProcessExit>>,
     },
 }
 
 async fn run_process(
     mut child: Child,
     mut command_rx: mpsc::Receiver<ProcessCommand>,
-    event_tx: mpsc::UnboundedSender<ProcessEvent>,
+    event_tx: mpsc::UnboundedSender<CliProcessEvent>,
 ) {
     let mut stdin = child.stdin.take();
     let stdout_task = child.stdout.take().map(|stdout| {
         tokio::spawn(forward_output(
             stdout,
-            ProcessStream::Stdout,
+            CliProcessStream::Stdout,
             event_tx.clone(),
         ))
     });
     let stderr_task = child.stderr.take().map(|stderr| {
         tokio::spawn(forward_output(
             stderr,
-            ProcessStream::Stderr,
+            CliProcessStream::Stderr,
             event_tx.clone(),
         ))
     });
@@ -203,7 +212,7 @@ async fn run_process(
                     Some(ProcessCommand::Stop { reply_tx }) => {
                         match process::stop_child(&mut child).await {
                             Ok(status) => {
-                                let exit = ProcessExit::from(status);
+                                let exit = CliProcessExit::from(status);
                                 let _ = reply_tx.send(Ok(exit));
                                 break exit;
                             }
@@ -217,14 +226,14 @@ async fn run_process(
             }
             _ = poll.tick() => {
                 match child.try_wait() {
-                    Ok(Some(status)) => break ProcessExit::from(status),
+                    Ok(Some(status)) => break CliProcessExit::from(status),
                     Ok(None) => {}
                     Err(error) => {
-                        let _ = event_tx.send(ProcessEvent::IoError {
+                        let _ = event_tx.send(CliProcessEvent::IoError {
                             stream: None,
                             message: error.to_string(),
                         });
-                        break ProcessExit { exit_code: None };
+                        break CliProcessExit { exit_code: None };
                     }
                 }
             }
@@ -234,7 +243,7 @@ async fn run_process(
     drop(stdin);
     join_output_task(stdout_task, &event_tx).await;
     join_output_task(stderr_task, &event_tx).await;
-    let _ = event_tx.send(ProcessEvent::Exited(exit));
+    let _ = event_tx.send(CliProcessEvent::Exited(exit));
 }
 
 async fn write_stdin(stdin: &mut Option<ChildStdin>, bytes: &[u8]) -> Result<()> {
@@ -250,8 +259,8 @@ async fn write_stdin(stdin: &mut Option<ChildStdin>, bytes: &[u8]) -> Result<()>
 
 async fn forward_output<R>(
     mut reader: R,
-    stream: ProcessStream,
-    event_tx: mpsc::UnboundedSender<ProcessEvent>,
+    stream: CliProcessStream,
+    event_tx: mpsc::UnboundedSender<CliProcessEvent>,
 ) where
     R: AsyncRead + Unpin,
 {
@@ -261,7 +270,7 @@ async fn forward_output<R>(
             Ok(0) => return,
             Ok(count) => {
                 if event_tx
-                    .send(ProcessEvent::Output {
+                    .send(CliProcessEvent::Output {
                         stream,
                         bytes: buffer[.. count].to_vec(),
                     })
@@ -271,7 +280,7 @@ async fn forward_output<R>(
                 }
             }
             Err(error) => {
-                let _ = event_tx.send(ProcessEvent::IoError {
+                let _ = event_tx.send(CliProcessEvent::IoError {
                     stream: Some(stream),
                     message: error.to_string(),
                 });
@@ -283,12 +292,12 @@ async fn forward_output<R>(
 
 async fn join_output_task(
     task: Option<tokio::task::JoinHandle<()>>,
-    event_tx: &mpsc::UnboundedSender<ProcessEvent>,
+    event_tx: &mpsc::UnboundedSender<CliProcessEvent>,
 ) {
     if let Some(task) = task
         && task.await.is_err()
     {
-        let _ = event_tx.send(ProcessEvent::IoError {
+        let _ = event_tx.send(CliProcessEvent::IoError {
             stream: None,
             message: "process output reader panicked".to_string(),
         });
@@ -306,13 +315,14 @@ fn closed_process_error<T>(_error: T) -> Error {
 mod tests {
     use std::time::Duration;
 
+    use agent_executor_core::SessionExecutor;
     use tokio::time::timeout;
 
-    use super::{ProcessBackend, ProcessEvent, ProcessRequest, ProcessStream};
+    use super::{CliProcessEvent, CliProcessExecutor, CliProcessRequest, CliProcessStream};
 
     #[test]
     fn session_start_requires_a_tokio_runtime() {
-        let error = match ProcessBackend.start(ProcessRequest::new("echo")) {
+        let error = match CliProcessExecutor.start_inner(CliProcessRequest::new("echo")) {
             Ok(_) => panic!("managed process should require a Tokio runtime"),
             Err(error) => error,
         };
@@ -323,13 +333,14 @@ mod tests {
     #[cfg(not(target_os = "windows"))]
     #[tokio::test]
     async fn session_forwards_stdout_stderr_and_exit() {
-        let mut process = ProcessBackend
-            .start(ProcessRequest {
+        let mut process = CliProcessExecutor
+            .start(CliProcessRequest {
                 program: "sh".to_string(),
                 args: vec!["-c".to_string(), "printf out; printf err >&2".to_string()],
                 cwd: None,
                 env: None,
             })
+            .await
             .unwrap();
 
         let mut stdout = Vec::new();
@@ -340,19 +351,19 @@ mod tests {
             .unwrap()
         {
             match event {
-                ProcessEvent::Output {
-                    stream: ProcessStream::Stdout,
+                CliProcessEvent::Output {
+                    stream: CliProcessStream::Stdout,
                     bytes,
                 } => stdout.extend(bytes),
-                ProcessEvent::Output {
-                    stream: ProcessStream::Stderr,
+                CliProcessEvent::Output {
+                    stream: CliProcessStream::Stderr,
                     bytes,
                 } => stderr.extend(bytes),
-                ProcessEvent::Exited(status) => {
+                CliProcessEvent::Exited(status) => {
                     exit = Some(status);
                     break;
                 }
-                ProcessEvent::IoError { message, .. } => {
+                CliProcessEvent::IoError { message, .. } => {
                     panic!("unexpected process I/O error: {message}")
                 }
             }
@@ -366,8 +377,8 @@ mod tests {
     #[cfg(not(target_os = "windows"))]
     #[tokio::test]
     async fn session_accepts_stdin_and_returns_response() {
-        let mut process = ProcessBackend
-            .start(ProcessRequest {
+        let mut process = CliProcessExecutor
+            .start(CliProcessRequest {
                 program: "sh".to_string(),
                 args: vec![
                     "-c".to_string(),
@@ -376,6 +387,7 @@ mod tests {
                 cwd: None,
                 env: None,
             })
+            .await
             .unwrap();
 
         process
@@ -390,13 +402,13 @@ mod tests {
             .unwrap()
         {
             match event {
-                ProcessEvent::Output {
-                    stream: ProcessStream::Stdout,
+                CliProcessEvent::Output {
+                    stream: CliProcessStream::Stdout,
                     bytes,
                 } => stdout.extend(bytes),
-                ProcessEvent::Exited(_) => break,
-                ProcessEvent::Output { .. } => {}
-                ProcessEvent::IoError { message, .. } => {
+                CliProcessEvent::Exited(_) => break,
+                CliProcessEvent::Output { .. } => {}
+                CliProcessEvent::IoError { message, .. } => {
                     panic!("unexpected process I/O error: {message}")
                 }
             }
@@ -408,13 +420,14 @@ mod tests {
     #[cfg(not(target_os = "windows"))]
     #[tokio::test]
     async fn session_stop_terminates_the_process() {
-        let mut process = ProcessBackend
-            .start(ProcessRequest {
+        let mut process = CliProcessExecutor
+            .start(CliProcessRequest {
                 program: "sh".to_string(),
                 args: vec!["-c".to_string(), "sleep 10".to_string()],
                 cwd: None,
                 env: None,
             })
+            .await
             .unwrap();
 
         let exit = process.control().stop().await.unwrap();
@@ -425,7 +438,7 @@ mod tests {
                 .await
                 .unwrap();
             match event {
-                Some(ProcessEvent::Exited(observed)) => {
+                Some(CliProcessEvent::Exited(observed)) => {
                     assert_eq!(observed, exit);
                     break;
                 }

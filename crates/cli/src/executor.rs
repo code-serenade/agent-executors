@@ -10,8 +10,8 @@ mod types;
 pub use policy::CommandPolicy;
 pub use runner::CliExecutor;
 pub use session::{
-    ProcessBackend, ProcessControl, ProcessEvent, ProcessExit, ProcessRequest, ProcessStream,
-    StartedProcess,
+    CliProcessControl, CliProcessEvent, CliProcessExecutor, CliProcessExit, CliProcessRequest,
+    CliProcessSession, CliProcessStream,
 };
 pub use types::{
     CliExecutionRequest, CliExecutionResult, CommandRequest, ExecutionOutput, ExecutionStatus,

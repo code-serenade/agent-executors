@@ -142,10 +142,11 @@ one-shot 执行结果使用结构化状态表达：
 
 `fail_on_non_zero` 只决定非 0 退出码是否升级成 `Error`；即使不升级，调用方仍然可以从 `ExecutionOutput.status` 读到 `Failed(code)`。timeout 不再作为普通执行失败抛出，而是返回 `TimedOut` 状态，真正的 `Error` 留给 spawn/io/policy 这类执行器自身失败。
 
-one-shot public API 保持为 `Executor::execute(...).await`。`ProcessBackend::start` 是另一条
-低层 OS-process 边界：它返回 `ProcessControl` 和 `ProcessEvent` receiver，不持有 task、agent、
-capsule 或 session registry。AgentOS 的 `World.ProcessSessions` 将在其上建立逻辑 session、日志、
-readiness 与路由；不要把这些产品语义塞回 executor。
+one-shot public API 保持为 `Executor::execute(...).await`。`SessionExecutor::start(...).await`
+是另一条长任务边界，`CliProcessExecutor` 是它的 CLI 实现。它返回 `CliProcessControl` 和
+`CliProcessEvent` receiver，不持有 task、agent、capsule 或 session registry。AgentOS 的
+`World.ProcessSessions` 将在其上建立逻辑 session、日志、readiness 与路由；不要把这些产品语义
+塞回 executor。
 
 安全策略在 `CommandPolicy` 里提供统一入口，包括是否允许 shell、最大 timeout、可执行程序 allowlist、cwd root allowlist、以及请求级 env var allowlist。以后继续扩展更细粒度限制时，应该放在 policy 层，而不是混进 process runner。
 

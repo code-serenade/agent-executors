@@ -1,8 +1,9 @@
 mod executor;
 
-pub use agent_executor_core::{Error, Executor, Result};
+pub use agent_executor_core::{Error, Executor, Result, SessionExecutor};
 pub use executor::{
-    CliExecutionRequest, CliExecutionResult, CliExecutor, CommandPolicy, CommandRequest,
-    ExecutionOutput, ExecutionStatus, ExecutionStdin, ProcessBackend, ProcessControl, ProcessEvent,
-    ProcessExit, ProcessRequest, ProcessStream, ShellKind, ShellRequest, StartedProcess,
+    CliExecutionRequest, CliExecutionResult, CliExecutor, CliProcessControl, CliProcessEvent,
+    CliProcessExecutor, CliProcessExit, CliProcessRequest, CliProcessSession, CliProcessStream,
+    CommandPolicy, CommandRequest, ExecutionOutput, ExecutionStatus, ExecutionStdin, ShellKind,
+    ShellRequest,
 };

@@ -228,10 +228,10 @@ one-shot 执行结果已经包含：
 
 当前新增：
 
-- `ProcessBackend::start(ProcessRequest)`
-- `StartedProcess::control()` / `StartedProcess::recv()`
-- `ProcessControl::write_stdin()` / `ProcessControl::stop()`
-- `ProcessEvent::Output` / `Exited` / `IoError`
+- `SessionExecutor::start(CliProcessRequest).await`，由 `CliProcessExecutor` 实现
+- `CliProcessSession::control()` / `CliProcessSession::recv()`
+- `CliProcessControl::write_stdin()` / `CliProcessControl::stop()`
+- `CliProcessEvent::Output` / `Exited` / `IoError`
 
 executor 内部 task 持有 child、stdin 和 pipe reader。调用方只拿 control 与 event receiver；
 它们不含 task、agent、capsule、日志 retention 或 cursor。后续 `World.ProcessSessions` 才负责
