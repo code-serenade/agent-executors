@@ -12,6 +12,7 @@ Small Rust executor primitives for running local commands and shell scripts.
 - Limit captured output and mark truncated stdout/stderr.
 - Measure command duration.
 - Keep command execution behind one async Rust API that agent actions can await.
+- Start managed local processes with stdin control and stdout/stderr/exit events.
 
 ## Install
 
@@ -50,4 +51,29 @@ async fn run() -> agent_executor_cli::Result<()> {
 - Timeout returns `ExecutionStatus::TimedOut` after killing the direct child process.
 - On Unix, timeout tries to kill the process group before killing the direct child.
 - On Windows, process cleanup currently targets the direct child.
-- Long-running or interactive processes require a separate managed session API; this one-shot executor always waits for a terminal result.
+- `CliExecutor` is one-shot and always waits for a terminal result.
+- `ProcessBackend` is a lower-level process primitive. It exposes `ProcessControl` and a
+  `ProcessEvent` receiver, but does not own task/session identity, logging retention, or agent routing.
+
+## Start a Managed Process
+
+```rust
+use agent_executor_cli::{ProcessBackend, ProcessEvent, ProcessRequest};
+
+async fn run() -> agent_executor_cli::Result<()> {
+    let mut process = ProcessBackend::default().start(ProcessRequest {
+        program: "sh".to_string(),
+        args: vec!["-c".to_string(), "printf ready".to_string()],
+        cwd: None,
+        env: None,
+    })?;
+
+    while let Some(event) = process.recv().await {
+        if let ProcessEvent::Exited(exit) = event {
+            assert!(exit.exit_code.is_some());
+            break;
+        }
+    }
+    Ok(())
+}
+```

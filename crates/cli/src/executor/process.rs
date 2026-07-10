@@ -48,6 +48,36 @@ pub(super) fn spawn_child(cmd: &mut Command) -> Result<Child> {
     cmd.spawn().map_err(Error::tool_io)
 }
 
+pub(super) fn configure_session_command(
+    cmd: &mut Command,
+    cwd: Option<String>,
+    env: Option<HashMap<String, String>>,
+) {
+    configure_process_group(cmd);
+    cmd.kill_on_drop(true);
+
+    if let Some(cwd) = cwd {
+        cmd.current_dir(cwd);
+    }
+
+    if let Some(env) = env {
+        cmd.envs(env);
+    }
+
+    cmd.stdin(Stdio::piped());
+    configure_output(cmd);
+}
+
+pub(super) async fn stop_child(child: &mut Child) -> Result<ExitStatus> {
+    if let Some(status) = child.try_wait().map_err(Error::tool_io)? {
+        return Ok(status);
+    }
+
+    kill_child_process_group(child);
+    child.kill().await.map_err(Error::tool_io)?;
+    child.wait().await.map_err(Error::tool_io)
+}
+
 pub(super) struct ProcessGroupGuard {
     #[cfg(unix)]
     pid: Option<u32>,

@@ -224,22 +224,18 @@ one-shot 执行结果已经包含：
 
 这对日志、debugger、timeout 分析和 capsule 记录都有用。
 
-### 6. 长任务 session 尚未进入 public API
+### 6. 已有低层 managed-process backend，尚无 AgentOS session
 
-当前 public API 只保留：
+当前新增：
 
-- `Executor::execute(CliExecutionRequest).await`
+- `ProcessBackend::start(ProcessRequest)`
+- `StartedProcess::control()` / `StartedProcess::recv()`
+- `ProcessControl::write_stdin()` / `ProcessControl::stop()`
+- `ProcessEvent::Output` / `Exited` / `IoError`
 
-长任务需要重新设计一套统一 request/result 边界，不应该把 `start/status/output/stop` 这类零散方法直接暴露成主 API。
-
-后续需要支持：
-
-- start session
-- status
-- stdout/stderr 增量 cursor
-- write stdin
-- stop/kill
-- forget/cleanup completed session
+executor 内部 task 持有 child、stdin 和 pipe reader。调用方只拿 control 与 event receiver；
+它们不含 task、agent、capsule、日志 retention 或 cursor。后续 `World.ProcessSessions` 才负责
+把这些底层事实收敛为可路由的 AgentOS session。
 
 ### 7. Unix timeout 已有 process group cleanup，Windows 仍是 direct child
 
@@ -356,7 +352,7 @@ use agent_executor::{cli::CliExecutor, Executor, Result};
 
 第一步：继续收敛 agent-facing 命名，确认 `CliExecutionRequest` / `CliExecutionResult` 是否就是 agent action protocol 的最终边界。
 
-第二步：重新设计长任务 session 的统一 request/result API。
+第二步：在 AgentOS runtime 中设计长任务 session 的统一 request/result API。
 
 第三步：给 session 增加显式 cleanup/forget API，避免长期保留已结束任务。
 

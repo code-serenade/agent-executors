@@ -142,7 +142,10 @@ one-shot 执行结果使用结构化状态表达：
 
 `fail_on_non_zero` 只决定非 0 退出码是否升级成 `Error`；即使不升级，调用方仍然可以从 `ExecutionOutput.status` 读到 `Failed(code)`。timeout 不再作为普通执行失败抛出，而是返回 `TimedOut` 状态，真正的 `Error` 留给 spawn/io/policy 这类执行器自身失败。
 
-当前 public API 只保留一个执行入口：`Executor::execute(...).await`。具体 executor 不重复定义同名 public 方法，调用方把 `Executor` trait 引入作用域后用 `.execute(...)`。长任务 session 暂时不进入 public API；如果后续要支持可观察长任务，应该先设计统一的 session request/result，再决定是否增加第二条清晰边界，而不是把多个零散方法直接暴露出去。
+one-shot public API 保持为 `Executor::execute(...).await`。`ProcessBackend::start` 是另一条
+低层 OS-process 边界：它返回 `ProcessControl` 和 `ProcessEvent` receiver，不持有 task、agent、
+capsule 或 session registry。AgentOS 的 `World.ProcessSessions` 将在其上建立逻辑 session、日志、
+readiness 与路由；不要把这些产品语义塞回 executor。
 
 安全策略在 `CommandPolicy` 里提供统一入口，包括是否允许 shell、最大 timeout、可执行程序 allowlist、cwd root allowlist、以及请求级 env var allowlist。以后继续扩展更细粒度限制时，应该放在 policy 层，而不是混进 process runner。
 
@@ -159,5 +162,5 @@ one-shot 执行结果使用结构化状态表达：
 - 和 agent action protocol 对齐 typed request/result 命名
 - 设计 executor input/output 如何映射到 capsule
 - 扩展 policy 层，加入命令参数规则、环境继承策略等更细粒度限制
-- 重新设计长任务 session 的统一 request/result 边界
+- 在 AgentOS runtime 上设计长任务 session 的统一 request/result 边界
 - 扩展 patch executor，支持更完整的 diff 预览、移动文件、复杂上下文匹配和更细粒度文件权限策略

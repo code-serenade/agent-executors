@@ -3,5 +3,6 @@ mod executor;
 pub use agent_executor_core::{Error, Executor, Result};
 pub use executor::{
     CliExecutionRequest, CliExecutionResult, CliExecutor, CommandPolicy, CommandRequest,
-    ExecutionOutput, ExecutionStatus, ExecutionStdin, ShellKind, ShellRequest,
+    ExecutionOutput, ExecutionStatus, ExecutionStdin, ProcessBackend, ProcessControl, ProcessEvent,
+    ProcessExit, ProcessRequest, ProcessStream, ShellKind, ShellRequest, StartedProcess,
 };
