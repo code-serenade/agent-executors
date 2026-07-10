@@ -17,7 +17,6 @@ pub struct CommandRequest {
     pub timeout_ms: Option<u64>,
     pub fail_on_non_zero: bool,
     pub stdin: Option<ExecutionStdin>,
-    pub background: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,7 +28,6 @@ pub struct ShellRequest {
     pub timeout_ms: Option<u64>,
     pub fail_on_non_zero: bool,
     pub stdin: Option<ExecutionStdin>,
-    pub background: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,7 +49,6 @@ impl ShellRequest {
             timeout_ms: None,
             fail_on_non_zero: false,
             stdin: None,
-            background: false,
         }
     }
 
@@ -84,7 +81,6 @@ pub enum ExecutionStatus {
     Success,
     Failed(i32),
     TimedOut,
-    Started,
     Unknown,
 }
 
@@ -101,19 +97,6 @@ pub struct ExecutionOutput {
 }
 
 impl ExecutionOutput {
-    pub(super) fn background(pid: u32) -> Self {
-        Self {
-            stdout: String::new(),
-            stderr: String::new(),
-            exit_code: 0,
-            pid: Some(pid),
-            status: ExecutionStatus::Started,
-            duration_ms: 0,
-            stdout_truncated: false,
-            stderr_truncated: false,
-        }
-    }
-
     pub(super) fn foreground(
         stdout: String,
         stderr: String,

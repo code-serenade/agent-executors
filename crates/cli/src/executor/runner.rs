@@ -60,25 +60,15 @@ impl CliExecutor {
         parts: RunParts,
     ) -> Result<ExecutionOutput> {
         let started_at = Instant::now();
-        process::configure_command(
-            cmd,
-            parts.cwd,
-            parts.env,
-            parts.stdin.as_ref(),
-            parts.background,
-        )?;
+        process::configure_command(cmd, parts.cwd, parts.env, parts.stdin.as_ref())?;
         let mut child = process::spawn_child(cmd)?;
-        let mut process_group_guard = process::ProcessGroupGuard::new(&child, !parts.background);
+        let mut process_group_guard = process::ProcessGroupGuard::new(&child, true);
         let stdout_handle =
             process::take_output_reader(&mut child.stdout, self.policy.max_output_bytes);
         let stderr_handle =
             process::take_output_reader(&mut child.stderr, self.policy.max_output_bytes);
 
         process::write_stdin(&mut child, parts.stdin.as_ref()).await?;
-
-        if parts.background {
-            return process::background_output(&child);
-        }
 
         let outcome = match process::wait_for_child(&mut child, parts.timeout_ms).await {
             Ok(outcome) => outcome,
@@ -107,7 +97,6 @@ pub(super) struct RunParts {
     timeout_ms: Option<u64>,
     fail_on_non_zero: bool,
     stdin: Option<ExecutionStdin>,
-    background: bool,
 }
 
 impl From<CommandRequest> for RunParts {
@@ -118,7 +107,6 @@ impl From<CommandRequest> for RunParts {
             timeout_ms: req.timeout_ms,
             fail_on_non_zero: req.fail_on_non_zero,
             stdin: req.stdin,
-            background: req.background,
         }
     }
 }
@@ -131,7 +119,6 @@ impl From<ShellRequest> for RunParts {
             timeout_ms: req.timeout_ms,
             fail_on_non_zero: req.fail_on_non_zero,
             stdin: req.stdin,
-            background: req.background,
         }
     }
 }

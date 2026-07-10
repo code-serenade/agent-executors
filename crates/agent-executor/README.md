@@ -22,7 +22,6 @@ async fn run() -> Result<()> {
         timeout_ms: Some(1_000),
         fail_on_non_zero: true,
         stdin: None,
-        background: false,
     })).await?;
 
     assert_eq!(output.stdout.trim(), "hello");

@@ -16,7 +16,6 @@ async fn command_success_returns_structured_success() {
             timeout_ms: None,
             fail_on_non_zero: false,
             stdin: None,
-            background: false,
         }))
         .await
         .unwrap();
@@ -40,7 +39,6 @@ async fn unified_execute_runs_command_requests() {
             timeout_ms: None,
             fail_on_non_zero: false,
             stdin: None,
-            background: false,
         }))
         .await
         .unwrap();
@@ -71,7 +69,6 @@ async fn cli_executor_implements_core_executor_trait() {
             timeout_ms: None,
             fail_on_non_zero: false,
             stdin: None,
-            background: false,
         }),
     )
     .await
@@ -98,7 +95,6 @@ async fn shell_command_supports_shell_syntax() {
             timeout_ms: None,
             fail_on_non_zero: false,
             stdin: None,
-            background: false,
         }))
         .await
         .unwrap();
@@ -118,7 +114,6 @@ async fn timeout_is_structured_output() {
             timeout_ms: Some(100),
             fail_on_non_zero: false,
             stdin: None,
-            background: false,
         }))
         .await
         .unwrap();
@@ -139,7 +134,6 @@ async fn non_zero_exit_can_be_observed_without_error() {
             timeout_ms: None,
             fail_on_non_zero: false,
             stdin: None,
-            background: false,
         }))
         .await
         .unwrap();
@@ -159,7 +153,6 @@ async fn non_zero_exit_can_fail() {
             timeout_ms: None,
             fail_on_non_zero: true,
             stdin: None,
-            background: false,
         }))
         .await;
 
@@ -219,7 +212,6 @@ async fn policy_can_reject_shell_and_large_timeout() {
             timeout_ms: None,
             fail_on_non_zero: false,
             stdin: None,
-            background: false,
         }))
         .await;
     let shell_error = shell_result.unwrap_err();
@@ -238,7 +230,6 @@ async fn policy_can_reject_shell_and_large_timeout() {
             timeout_ms: Some(20),
             fail_on_non_zero: false,
             stdin: None,
-            background: false,
         }))
         .await;
     let timeout_error = timeout_result.unwrap_err();
@@ -267,7 +258,6 @@ async fn policy_can_restrict_program_cwd_and_env() {
             timeout_ms: None,
             fail_on_non_zero: false,
             stdin: None,
-            background: false,
         }))
         .await;
     assert!(allowed.is_ok());
@@ -281,7 +271,6 @@ async fn policy_can_restrict_program_cwd_and_env() {
             timeout_ms: None,
             fail_on_non_zero: false,
             stdin: Some(ExecutionStdin::Null),
-            background: false,
         }))
         .await;
     assert!(blocked_program.is_err());
@@ -298,7 +287,6 @@ async fn policy_can_restrict_program_cwd_and_env() {
             timeout_ms: None,
             fail_on_non_zero: false,
             stdin: None,
-            background: false,
         }))
         .await;
     assert!(blocked_env.is_err());
@@ -320,7 +308,6 @@ async fn policy_can_limit_captured_output_size() {
             timeout_ms: None,
             fail_on_non_zero: false,
             stdin: None,
-            background: false,
         }))
         .await
         .unwrap();
@@ -365,7 +352,6 @@ async fn non_utf8_stdout_is_preserved_lossily() {
             timeout_ms: None,
             fail_on_non_zero: false,
             stdin: None,
-            background: false,
         }))
         .await
         .unwrap();
@@ -383,7 +369,6 @@ fn cat_request(stdin: Option<ExecutionStdin>) -> CommandRequest {
         timeout_ms: Some(1_000),
         fail_on_non_zero: false,
         stdin,
-        background: false,
     }
 }
 

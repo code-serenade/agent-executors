@@ -7,7 +7,7 @@ Small Rust executor primitives for running local commands and shell scripts.
 - Run commands with args, cwd, env, stdin, timeout, and output capture.
 - Run shell commands when shell syntax is needed.
 - Choose the shell for shell commands (`sh`, `zsh`, `bash`, `cmd.exe`, or a custom path).
-- Return structured command status for success, non-zero exits, timeout, and background start.
+- Return structured command status for success, non-zero exits, and timeout.
 - Apply command policy checks before execution.
 - Limit captured output and mark truncated stdout/stderr.
 - Measure command duration.
@@ -34,7 +34,6 @@ async fn run() -> agent_executor_cli::Result<()> {
         timeout_ms: Some(1_000),
         fail_on_non_zero: true,
         stdin: None,
-        background: false,
     })).await?;
 
     assert_eq!(output.stdout.trim(), "hello");
@@ -51,3 +50,4 @@ async fn run() -> agent_executor_cli::Result<()> {
 - Timeout returns `ExecutionStatus::TimedOut` after killing the direct child process.
 - On Unix, timeout tries to kill the process group before killing the direct child.
 - On Windows, process cleanup currently targets the direct child.
+- Long-running or interactive processes require a separate managed session API; this one-shot executor always waits for a terminal result.

@@ -27,10 +27,9 @@ pub(super) fn configure_command(
     cwd: Option<String>,
     env: Option<HashMap<String, String>>,
     stdin: Option<&ExecutionStdin>,
-    background: bool,
 ) -> Result<()> {
     configure_process_group(cmd);
-    cmd.kill_on_drop(!background);
+    cmd.kill_on_drop(true);
 
     if let Some(cwd) = cwd {
         cmd.current_dir(cwd);
@@ -40,23 +39,13 @@ pub(super) fn configure_command(
         cmd.envs(env);
     }
 
-    configure_stdin(cmd, stdin, background)?;
-    configure_output(cmd, background);
+    configure_stdin(cmd, stdin)?;
+    configure_output(cmd);
     Ok(())
 }
 
 pub(super) fn spawn_child(cmd: &mut Command) -> Result<Child> {
     cmd.spawn().map_err(Error::tool_io)
-}
-
-pub(super) fn background_output(child: &Child) -> Result<ExecutionOutput> {
-    let pid = child.id().ok_or_else(|| {
-        Error::tool_io(io::Error::other(
-            "background process started without a process id",
-        ))
-    })?;
-
-    Ok(ExecutionOutput::background(pid))
 }
 
 pub(super) struct ProcessGroupGuard {
@@ -211,11 +200,7 @@ pub(super) async fn build_output(
     }
 }
 
-fn configure_stdin(
-    cmd: &mut Command,
-    stdin: Option<&ExecutionStdin>,
-    background: bool,
-) -> Result<()> {
+fn configure_stdin(cmd: &mut Command, stdin: Option<&ExecutionStdin>) -> Result<()> {
     match stdin {
         Some(ExecutionStdin::File(path)) => {
             let file = File::open(path).map_err(Error::tool_io)?;
@@ -227,22 +212,13 @@ fn configure_stdin(
         Some(_) => {
             cmd.stdin(Stdio::piped());
         }
-        None if background => {
-            cmd.stdin(Stdio::null());
-        }
         None => {}
     }
 
     Ok(())
 }
 
-fn configure_output(cmd: &mut Command, background: bool) {
-    if background {
-        cmd.stdout(Stdio::null());
-        cmd.stderr(Stdio::null());
-        return;
-    }
-
+fn configure_output(cmd: &mut Command) {
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
 }

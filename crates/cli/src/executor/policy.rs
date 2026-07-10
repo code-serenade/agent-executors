@@ -10,7 +10,6 @@ use super::types::{CommandRequest, ShellRequest};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandPolicy {
     pub allow_shell: bool,
-    pub allow_background: bool,
     pub max_timeout_ms: Option<u64>,
     pub max_output_bytes: Option<usize>,
     pub allowed_programs: Option<HashSet<String>>,
@@ -22,7 +21,6 @@ impl Default for CommandPolicy {
     fn default() -> Self {
         Self {
             allow_shell: true,
-            allow_background: true,
             max_timeout_ms: None,
             max_output_bytes: None,
             allowed_programs: None,
@@ -38,7 +36,6 @@ impl CommandPolicy {
         self.validate_program(&req.program)?;
         self.validate_cwd(req.cwd.as_deref())?;
         self.validate_env(req.env.as_ref())?;
-        self.validate_background(req.background)?;
         self.validate_timeout(req.timeout_ms)
     }
 
@@ -49,7 +46,6 @@ impl CommandPolicy {
 
         self.validate_cwd(req.cwd.as_deref())?;
         self.validate_env(req.env.as_ref())?;
-        self.validate_background(req.background)?;
         self.validate_timeout(req.timeout_ms)
     }
 }
@@ -113,16 +109,6 @@ impl CommandPolicy {
                     "env var `{key}` is not allowed by policy"
                 )));
             }
-        }
-
-        Ok(())
-    }
-
-    fn validate_background(&self, background: bool) -> Result<()> {
-        if background && !self.allow_background {
-            return Err(policy_error(
-                "background commands are not allowed by policy",
-            ));
         }
 
         Ok(())
