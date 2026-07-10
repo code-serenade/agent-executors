@@ -96,7 +96,7 @@ impl CliProcessExecutor {
         Ok(CliProcessSession {
             pid,
             control: CliProcessControl { command_tx },
-            event_rx,
+            events: CliProcessEventReceiver { event_rx },
         })
     }
 }
@@ -113,7 +113,7 @@ impl SessionExecutor for CliProcessExecutor {
 pub struct CliProcessSession {
     pid: u32,
     control: CliProcessControl,
-    event_rx: mpsc::UnboundedReceiver<CliProcessEvent>,
+    events: CliProcessEventReceiver,
 }
 
 impl CliProcessSession {
@@ -125,6 +125,24 @@ impl CliProcessSession {
         self.control.clone()
     }
 
+    pub async fn recv(&mut self) -> Option<CliProcessEvent> {
+        self.events.recv().await
+    }
+
+    pub fn try_recv(&mut self) -> Option<CliProcessEvent> {
+        self.events.try_recv()
+    }
+
+    pub fn into_parts(self) -> (u32, CliProcessControl, CliProcessEventReceiver) {
+        (self.pid, self.control, self.events)
+    }
+}
+
+pub struct CliProcessEventReceiver {
+    event_rx: mpsc::UnboundedReceiver<CliProcessEvent>,
+}
+
+impl CliProcessEventReceiver {
     pub async fn recv(&mut self) -> Option<CliProcessEvent> {
         self.event_rx.recv().await
     }
