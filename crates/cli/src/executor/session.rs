@@ -465,4 +465,69 @@ mod tests {
             }
         }
     }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn session_stop_allows_graceful_sigterm_exit() {
+        let mut process = CliProcessExecutor
+            .start(CliProcessRequest {
+                program: "sh".to_string(),
+                args: vec![
+                    "-c".to_string(),
+                    "trap 'printf stopped; exit 0' TERM; printf ready; while :; do :; done"
+                        .to_string(),
+                ],
+                cwd: None,
+                env: None,
+            })
+            .await
+            .unwrap();
+
+        wait_for_output(&mut process, b"ready").await;
+        let exit = process.control().stop().await.unwrap();
+
+        assert_eq!(exit.exit_code, Some(0));
+        wait_for_output(&mut process, b"stopped").await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn session_stop_escalates_when_sigterm_is_ignored() {
+        let mut process = CliProcessExecutor
+            .start(CliProcessRequest {
+                program: "sh".to_string(),
+                args: vec![
+                    "-c".to_string(),
+                    "trap '' TERM; printf ready; while :; do :; done".to_string(),
+                ],
+                cwd: None,
+                env: None,
+            })
+            .await
+            .unwrap();
+
+        wait_for_output(&mut process, b"ready").await;
+        let started = std::time::Instant::now();
+        let exit = process.control().stop().await.unwrap();
+
+        assert!(started.elapsed() >= Duration::from_millis(450));
+        assert_ne!(exit.exit_code, Some(0));
+    }
+
+    #[cfg(unix)]
+    async fn wait_for_output(process: &mut super::CliProcessSession, expected: &[u8]) {
+        loop {
+            match timeout(Duration::from_secs(1), process.recv())
+                .await
+                .unwrap()
+            {
+                Some(CliProcessEvent::Output { bytes, .. }) if bytes == expected => return,
+                Some(CliProcessEvent::Exited(exit)) => {
+                    panic!("process exited before expected output: {exit:?}")
+                }
+                Some(_) => {}
+                None => panic!("process event stream closed before expected output"),
+            }
+        }
+    }
 }

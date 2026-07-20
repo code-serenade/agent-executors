@@ -123,6 +123,65 @@ async fn timeout_is_structured_output() {
     assert!(output.duration_ms >= 50);
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn one_shot_command_cannot_leave_a_background_child() {
+    let output = CliExecutor::default()
+        .execute(CliExecutionRequest::Shell(ShellRequest {
+            command: "sleep 30 >/dev/null 2>&1 & printf '%s' $!".to_string(),
+            shell: ShellKind::default(),
+            cwd: None,
+            env: None,
+            timeout_ms: Some(2_000),
+            fail_on_non_zero: false,
+            stdin: None,
+        }))
+        .await
+        .unwrap();
+    let child_pid = output.stdout.parse::<i32>().unwrap();
+
+    assert_process_gone(child_pid).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn dropping_one_shot_future_kills_its_process_group() {
+    let pid_file = NamedTempFile::new().unwrap();
+    let command = format!(
+        "sleep 30 >/dev/null 2>&1 & printf '%s' $! > '{}'; wait",
+        pid_file.path().display()
+    );
+    let task = tokio::spawn(async move {
+        CliExecutor::default()
+            .execute(CliExecutionRequest::Shell(ShellRequest {
+                command,
+                shell: ShellKind::default(),
+                cwd: None,
+                env: None,
+                timeout_ms: None,
+                fail_on_non_zero: false,
+                stdin: None,
+            }))
+            .await
+    });
+
+    let child_pid = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            let text = std::fs::read_to_string(pid_file.path()).unwrap();
+            if let Ok(pid) = text.parse::<i32>() {
+                break pid;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+
+    task.abort();
+    let _ = task.await;
+    assert_process_gone(child_pid).await;
+}
+
 #[tokio::test]
 async fn non_zero_exit_can_be_observed_without_error() {
     let output = CliExecutor::default()
@@ -374,6 +433,21 @@ fn cat_request(stdin: Option<ExecutionStdin>) -> CommandRequest {
 
 fn exit_command(code: i32) -> String {
     format!("exit {code}")
+}
+
+#[cfg(unix)]
+async fn assert_process_gone(pid: i32) {
+    tokio::time::timeout(std::time::Duration::from_secs(2), async move {
+        loop {
+            let result = unsafe { libc::kill(pid, 0) };
+            if result == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("process should be reaped after command ownership ends");
 }
 
 fn output_limit_command() -> String {

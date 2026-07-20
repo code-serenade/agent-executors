@@ -17,6 +17,9 @@ use tokio::{
 
 use super::types::{ExecutionOutput, ExecutionStatus, ExecutionStdin};
 
+const GRACEFUL_STOP_TIMEOUT: Duration = Duration::from_millis(500);
+const STOP_POLL_INTERVAL: Duration = Duration::from_millis(10);
+
 pub(super) enum WaitOutcome {
     Exited(ExitStatus),
     TimedOut,
@@ -73,8 +76,24 @@ pub(super) async fn stop_child(child: &mut Child) -> Result<ExitStatus> {
         return Ok(status);
     }
 
-    kill_child_process_group(child);
-    child.kill().await.map_err(Error::tool_io)?;
+    request_graceful_process_group_stop(child)?;
+    let deadline = tokio::time::Instant::now() + GRACEFUL_STOP_TIMEOUT;
+    loop {
+        if let Some(status) = child.try_wait().map_err(Error::tool_io)? {
+            return Ok(status);
+        }
+        if tokio::time::Instant::now() >= deadline {
+            break;
+        }
+        tokio::time::sleep(STOP_POLL_INTERVAL).await;
+    }
+
+    kill_child_process_group(child)?;
+    if let Err(error) = child.start_kill()
+        && error.kind() != io::ErrorKind::InvalidInput
+    {
+        return Err(Error::tool_io(error));
+    }
     child.wait().await.map_err(Error::tool_io)
 }
 
@@ -104,13 +123,20 @@ impl ProcessGroupGuard {
             self.pid = None;
         }
     }
+
+    pub(super) fn cleanup_remaining_processes(&self) {
+        #[cfg(unix)]
+        if let Some(pid) = self.pid {
+            let _ = signal_process_group(pid, libc::SIGKILL);
+        }
+    }
 }
 
 #[cfg(unix)]
 impl Drop for ProcessGroupGuard {
     fn drop(&mut self) {
         if let Some(pid) = self.pid {
-            kill_process_group(pid);
+            let _ = signal_process_group(pid, libc::SIGKILL);
         }
     }
 }
@@ -265,7 +291,7 @@ async fn wait_with_timeout(child: &mut Child, timeout_ms: u64) -> Result<WaitOut
 }
 
 async fn kill_timed_out_child(child: &mut Child) -> Result<()> {
-    kill_child_process_group(child);
+    kill_child_process_group(child)?;
     child.kill().await.map_err(Error::tool_io)?;
     child.wait().await.map_err(Error::tool_io)?;
     Ok(())
@@ -342,20 +368,42 @@ fn configure_process_group(cmd: &mut Command) {
 fn configure_process_group(_cmd: &mut Command) {}
 
 #[cfg(unix)]
-fn kill_child_process_group(child: &Child) {
+fn request_graceful_process_group_stop(child: &Child) -> Result<()> {
     let Some(pid) = child.id() else {
-        return;
+        return Ok(());
     };
-    kill_process_group(pid);
-}
-
-#[cfg(unix)]
-fn kill_process_group(pid: u32) {
-    let pgid = -(pid as i32);
-    unsafe {
-        libc::kill(pgid, libc::SIGKILL);
-    }
+    signal_process_group(pid, libc::SIGTERM)
 }
 
 #[cfg(not(unix))]
-fn kill_child_process_group(_child: &Child) {}
+fn request_graceful_process_group_stop(child: &mut Child) -> Result<()> {
+    child.start_kill().map_err(Error::tool_io)
+}
+
+#[cfg(unix)]
+fn kill_child_process_group(child: &Child) -> Result<()> {
+    let Some(pid) = child.id() else {
+        return Ok(());
+    };
+    signal_process_group(pid, libc::SIGKILL)
+}
+
+#[cfg(unix)]
+fn signal_process_group(pid: u32, signal: i32) -> Result<()> {
+    let pgid = -(pid as i32);
+    let result = unsafe { libc::kill(pgid, signal) };
+    if result == 0 {
+        return Ok(());
+    }
+
+    let error = io::Error::last_os_error();
+    if error.raw_os_error() == Some(libc::ESRCH) {
+        return Ok(());
+    }
+    Err(Error::tool_io(error))
+}
+
+#[cfg(not(unix))]
+fn kill_child_process_group(_child: &Child) -> Result<()> {
+    Ok(())
+}

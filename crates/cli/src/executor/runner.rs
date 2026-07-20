@@ -78,6 +78,9 @@ impl CliExecutor {
                 return Err(err);
             }
         };
+        // A one-shot command owns its whole process group. Clean up descendants
+        // that outlived the direct child before waiting for inherited pipes.
+        process_group_guard.cleanup_remaining_processes();
         process_group_guard.disarm();
 
         process::build_output(
